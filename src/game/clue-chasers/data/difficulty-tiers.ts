@@ -30,28 +30,28 @@ export const DIFFICULTY_TIERS: Record<DifficultyTierName, DifficultyTierParams> 
   },
   'Easy+': {
     clueSlotsRequired: 5,
-    tapLimit: 15,
+    tapLimit: 14, // GDD: Ch1 Cases 3-5 — 14 taps
     lockedHotspotCount: 1,
     redHerringCount: 2,
     hotspotCount: 8,
   },
   Medium: {
     clueSlotsRequired: 5,
-    tapLimit: 12,
+    tapLimit: 13, // GDD: Ch2 Cases 1-3 — 13 taps
     lockedHotspotCount: 2,
     redHerringCount: 2,
     hotspotCount: 9,
   },
   'Medium+': {
     clueSlotsRequired: 5,
-    tapLimit: 10,
+    tapLimit: 12, // GDD: Ch2 Cases 4-5 — 12 taps
     lockedHotspotCount: 2,
     redHerringCount: 3,
     hotspotCount: 10,
   },
   Hard: {
     clueSlotsRequired: 5,
-    tapLimit: 8,
+    tapLimit: 11, // GDD: Ch3+ — 11 taps
     lockedHotspotCount: 3,
     redHerringCount: 3,
     hotspotCount: 11,

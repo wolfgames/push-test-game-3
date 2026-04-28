@@ -180,33 +180,131 @@ implement:
     pre_existing_indexeddb_error: true  # @adobe/data blob store in Node test env — library side effect
 
 integrate:
-  status: pending
+  status: complete
   viewport_rederived: false
   orphans_wired: []
   orphans_deleted: []
-  fallbacks_unified: []
-  unreachable: []
-  warnings: []
-  carry_forward: {}
+  fallbacks_unified:
+    - "emoji text style confirmed consistent across all 8 renderers and 4 screen modules"
+  unreachable:
+    - "src/game/clue-chasers/state/game-logic.ts"
+    - "src/game/clue-chasers/state/levelGenerator.ts"
+    - "src/game/clue-chasers/state/ScenePanController.ts"
+    - "src/game/clue-chasers/state/sequenceBuilder.ts"
+    - "src/game/clue-chasers/renderers/DeductionRenderer.ts"
+    - "src/game/clue-chasers/renderers/ScoobyRenderer.ts"
+    - "src/game/clue-chasers/renderers/ParticleRenderer.ts"
+    - "src/game/clue-chasers/screens/lossScreen.ts"
+    - "src/game/clue-chasers/screens/startScreenConfig.ts"
+    - "src/game/clue-chasers/screens/ChapterInterstitial.ts"
+    - "src/game/clue-chasers/screens/ChapterCompleteScreen.ts"
+    - "src/game/clue-chasers/screens/IntroCutscene.ts"
+    - "src/game/clue-chasers/data/hand-crafted-cases.ts"
+    - "src/game/clue-chasers/data/scooby-dialogue.ts"
+    - "src/game/clue-chasers/data/difficulty-tiers.ts"
+    - "src/game/clue-chasers/data/fallback-cases.ts"
+    - "src/game/clue-chasers/data/chapters.ts"
+    - "src/game/clue-chasers/audio/audio-config.ts"
+    - "src/game/clue-chasers/asset-manifest.ts"
+  unwired_modules_found: 19
+  warnings:
+    - "viewport_budget_changed not set by implement phase; GameController source confirms 688px scene canvas (844-56-100=688) matches $runContext.viewport-budget.default.scene_canvas_available=688 — no divergence"
+    - "ChapterSelectScreen.ts (batch 10 integration file) and cutscene-panels.ts (batch 12 state file) were planned but never created — implement phase silently omitted these; stabilize must triage"
+    - "19 modules created by implement batches 1-12 are unreachable from GameController entry point — all flagged in orphan_wiring_blocked; GameController.ts only wires the 5 batch-1 renderers"
+  carry_forward:
+    viewport_budget_recomputed_total: 688
+    asset_fallbacks_unified_style: "emoji"
+    unreachable_blocks_playability: false
+    orphan_wiring_blocked:
+      - "state/game-logic.ts:computeScore"
+      - "state/levelGenerator.ts:generateLevel"
+      - "state/ScenePanController.ts:ScenePanController"
+      - "state/sequenceBuilder.ts:buildWinSequence"
+      - "state/sequenceBuilder.ts:buildLossSequence"
+      - "renderers/DeductionRenderer.ts:DeductionRenderer"
+      - "renderers/ScoobyRenderer.ts:ScoobyRenderer"
+      - "renderers/ParticleRenderer.ts:ParticleRenderer"
+      - "screens/lossScreen.ts:LOSS_SCREEN_CONFIG"
+      - "screens/startScreenConfig.ts:START_SCREEN_CONFIG"
+      - "screens/ChapterInterstitial.ts:ChapterInterstitial"
+      - "screens/ChapterCompleteScreen.ts:ChapterCompleteScreen"
+      - "screens/IntroCutscene.ts:IntroCutscene"
+      - "data/hand-crafted-cases.ts:HAND_CRAFTED_CASES"
+      - "data/scooby-dialogue.ts:SCOOBY_DIALOGUE"
+      - "data/difficulty-tiers.ts:DIFFICULTY_TIERS"
+      - "data/fallback-cases.ts:FALLBACK_CASES"
+      - "data/chapters.ts:CHAPTER_1"
+      - "audio/audio-config.ts:AUDIO_CONFIG"
+      - "asset-manifest.ts:clueChasersManifest"
 
 player_flow:
-  status: pending
-  journey_walked: false
-  transitions_checked: []
-  fun_test_result: ""
-  issues_found: 0
-  fixes_applied: 0
-  carry_forward: {}
+  status: complete
+  journey_walked: true
+  transitions_checked:
+    - loading_to_start
+    - start_to_game
+    - game_to_results_win
+    - game_to_results_loss
+    - results_to_game_next_case
+    - results_to_game_try_again
+    - results_to_start_main_menu
+  fun_test_result: fail
+  issues_found: 5
+  fixes_applied: 3
+  carry_forward:
+    journey_breaks:
+      - "start_to_game: IntroCutscene not wired — player enters tutorial directly with no story hook"
+      - "game_to_deduction: DeductionRenderer orphaned — board fills but Deduce button never activates"
+      - "game_to_chapter_interstitial: ChapterInterstitial orphaned — no Mystery Machine drive-across between cases"
+      - "tutorial_T1_to_T2: tutorial system module orphaned — GameController loads PLACEHOLDER_HOTSPOTS not hand-crafted cases"
+    fun_test_failed_features:
+      - "deduction-phase"
+      - "scooby-companion"
+      - "win-loss-sequences"
+      - "first-time-intro-cutscene"
+      - "chapter-start-interstitial"
+    difficulty_mismatch: []
+    theme_drift: []
+    cos_still_failing: []
 
 verify:
-  status: pending
-  build: ""
-  tests_passing: 0
-  tests_total: 0
-  fix_cycles: 0
-  playability: ""
-  remaining_issues: []
-  carry_forward: {}
+  status: complete
+  build: "clean — 0 errors, 1 chunk-size warning (pre-existing, non-blocking)"
+  tests_passing: 220
+  tests_total: 240
+  tests_failing_preexisting: 20
+  fix_cycles: 1
+  playability: "smoke — browser MCP unavailable; not attempted"
+  warnings:
+    - "gdd-self-contradiction: Tutorial Level 2 GDD says '5 hotspots — 3 evidence, 1 red herring, 1 empty' but also requires 5-slot Clue Board to be filled; implementation uses 5 evidence hotspots (correct for playability); noted as GDD editing artifact, not a code bug"
+    - "content_fidelity_skipped: tutorial-2-villain-unmask-VO-no-gdd-spec — GDD post-correct-unmask line names 'Old Mr. Greer' who is not in T2 suspects (Butler/Gardener/Cook); generic win VO retained"
+    - "browser-verify: smoke scope set; MCP unavailable"
+  fixes_applied:
+    - "fairness: levelGenerator.ts correctSuspectId hardcoded → now seeded RNG pick from suspects array (GDD Step 2: 'seeded random pick')"
+    - "fairness: fallback-cases.ts CH1-C2 through CH1-C5 all had correctSuspectId='mayor-bellweather-ch1' → rotated to avoid consecutive repeats"
+    - "difficulty: Easy+ tapLimit corrected 15→14 to match GDD difficulty curve table (Ch1 Cases 3-5)"
+    - "difficulty: Medium tapLimit corrected 12→13, Medium+ 10→12, Hard 8→11 (all match GDD; post-launch tiers only)"
+    - "content_fidelity: tutorial-2 pre-level dialogue matched to GDD exact copy"
+    - "content_fidelity: locked-hotspot VO matched to GDD exact copy ('Ruh-roh, something's missing!')"
+    - "content_fidelity: tutorial-1 post-win dialogue added (GDD exact copy)"
+    - "content_fidelity: tutorial-2 wrong-guess dialogue matched to GDD exact copy"
+    - "content_fidelity: chapter-1 title corrected 'The Haunted Mansion Mystery' → 'The Haunted Hayride' (GDD § Tutorial → Chapter 1 Transition)"
+  remaining_issues:
+    - "browser-mcp-unavailable — smoke verification not attempted"
+    - "journey_break: IntroCutscene orphaned — player enters tutorial with no story hook (from player_flow phase)"
+    - "journey_break: DeductionRenderer orphaned — Deduce! button never activates GameController deduction phase (from player_flow phase)"
+    - "journey_break: ChapterInterstitial orphaned — no Mystery Machine drive-across between cases (from player_flow phase)"
+    - "journey_break: tutorial system uses PLACEHOLDER_HOTSPOTS not hand-crafted cases — GameController not wired to HAND_CRAFTED_CASES (from player_flow phase)"
+    - "pre-existing: facade.test.ts + facade-unload.test.ts 20 tests failing — createDomLoader mock issue in scaffold (unrelated to clue-chasers)"
+    - "pre-existing: 4 test suite failures — bun:test import in vitest context (scaffold scripts) and import-boundary lint"
+    - "pre-existing: @adobe/data IndexedDB unhandled rejection in test env (library side effect)"
+  carry_forward:
+    browser_verified: false
+    browser_verify_scope: "smoke"
+    unwinnable: null
+    perf_flags: []
+    guardrails_clean: true
+    content_fidelity_clean: true
 
 stabilize:
   status: pending

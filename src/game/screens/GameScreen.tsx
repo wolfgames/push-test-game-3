@@ -1,10 +1,12 @@
-import { onMount, onCleanup } from 'solid-js';
+import { onMount, onCleanup, createEffect } from 'solid-js';
+import gsap from 'gsap';
 
 import { useAssets } from '~/core/systems/assets';
 import { PauseOverlay, useTuning, type ScaffoldTuning } from '~/core';
 import { Logo } from '~/core/ui/Logo';
 import { useAudio } from '~/core/systems/audio';
 import { useGameTracking } from '~/game/setup/tracking';
+import { useScreen } from '~/core/systems/screens';
 
 import type { GameTuning } from '~/game/tuning';
 import { useGameData } from '~/game/screens/useGameData';
@@ -19,6 +21,7 @@ export default function GameScreen() {
   const audio = useAudio();
   const gameData = useGameData();
   const { core: analytics } = useGameTracking();
+  const { goto } = useScreen();
   let containerRef: HTMLDivElement | undefined;
 
   // Setup game-specific controller (creates signals & effects in reactive context)
@@ -30,11 +33,28 @@ export default function GameScreen() {
     analytics,
   });
 
+  // Navigate to results screen when game outcome is set (win or loss).
+  // Bridge propagates ECS gamePhase → gameState.gameOutcome.
+  // Use GSAP delayedCall (not setTimeout per guardrail #3) to allow
+  // GPU animations to begin before screen transition.
+  let outcomeTimer: gsap.core.Tween | null = null;
+  createEffect(() => {
+    const outcome = gameState.gameOutcome();
+    if (outcome === 'win' || outcome === 'loss') {
+      outcomeTimer?.kill();
+      outcomeTimer = gsap.delayedCall(0.8, () => { void goto('results'); });
+    }
+  });
+
   onMount(() => {
     if (containerRef) controller.init(containerRef);
   });
 
-  onCleanup(() => controller.destroy());
+  onCleanup(() => {
+    outcomeTimer?.kill();
+    outcomeTimer = null;
+    controller.destroy();
+  });
 
   return (
     <div class="fixed inset-0 bg-black">

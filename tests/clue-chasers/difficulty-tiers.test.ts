@@ -12,10 +12,10 @@ describe('DifficultyTiers: parameter correctness', () => {
     expect(tier.tapLimit).toBe(15);
   });
 
-  it('Easy+ tier: clueSlotsRequired=5, tapLimit=15, lockedHotspots=1', () => {
+  it('Easy+ tier: clueSlotsRequired=5, tapLimit=14, lockedHotspots=1', () => {
     const tier = DIFFICULTY_TIERS['Easy+'];
     expect(tier.clueSlotsRequired).toBe(5);
-    expect(tier.tapLimit).toBe(15);
+    expect(tier.tapLimit).toBe(14); // GDD: Ch1 Cases 3-5 tap limit is 14
     expect(tier.lockedHotspotCount).toBe(1);
   });
 

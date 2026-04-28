@@ -32,7 +32,8 @@ const CH1_C2: CaseLayout = {
     { id: 'professor-whitmore', name: 'Professor Whitmore', motive: 'Research cover-up', emoji: '🔬' },
     { id: 'mayor-bellweather-ch1', name: 'Mayor Bellweather', motive: 'Land development', emoji: '🏛' },
   ],
-  correctSuspectId: 'mayor-bellweather-ch1',
+  // Rotate suspect from Ch1-C1 (mayor-bellweather-ch1) to avoid consecutive repeat
+  correctSuspectId: 'caretaker-jones',
 };
 
 const CH1_C3: CaseLayout = {
@@ -42,7 +43,7 @@ const CH1_C3: CaseLayout = {
   sceneEmoji: '🕯️',
   sceneLabel: 'Mansion Cellar',
   clueSlotsRequired: 5,
-  tapLimit: 15,
+  tapLimit: 14, // Easy+ tier per GDD difficulty curve
   isIntro: false,
   skipDeduction: false,
   hotspots: [
@@ -60,7 +61,8 @@ const CH1_C3: CaseLayout = {
     { id: 'professor-whitmore', name: 'Professor Whitmore', motive: 'Research cover-up', emoji: '🔬' },
     { id: 'mayor-bellweather-ch1', name: 'Mayor Bellweather', motive: 'Land development', emoji: '🏛' },
   ],
-  correctSuspectId: 'mayor-bellweather-ch1',
+  // Different from Ch1-C2 (caretaker-jones) to avoid consecutive repeat
+  correctSuspectId: 'professor-whitmore',
 };
 
 const CH1_C4: CaseLayout = {
@@ -70,7 +72,7 @@ const CH1_C4: CaseLayout = {
   sceneEmoji: '🗼',
   sceneLabel: 'Mansion Tower',
   clueSlotsRequired: 5,
-  tapLimit: 15,
+  tapLimit: 14, // Easy+ tier per GDD difficulty curve
   isIntro: false,
   skipDeduction: false,
   hotspots: [
@@ -88,6 +90,7 @@ const CH1_C4: CaseLayout = {
     { id: 'professor-whitmore', name: 'Professor Whitmore', motive: 'Research cover-up', emoji: '🔬' },
     { id: 'mayor-bellweather-ch1', name: 'Mayor Bellweather', motive: 'Land development', emoji: '🏛' },
   ],
+  // Different from Ch1-C3 (professor-whitmore) to avoid consecutive repeat
   correctSuspectId: 'mayor-bellweather-ch1',
 };
 
@@ -98,7 +101,7 @@ const CH1_C5: CaseLayout = {
   sceneEmoji: '🌿',
   sceneLabel: 'Mansion Garden',
   clueSlotsRequired: 5,
-  tapLimit: 15,
+  tapLimit: 14, // Easy+ tier per GDD difficulty curve
   isIntro: false,
   skipDeduction: false,
   hotspots: [
@@ -117,7 +120,8 @@ const CH1_C5: CaseLayout = {
     { id: 'professor-whitmore', name: 'Professor Whitmore', motive: 'Research cover-up', emoji: '🔬' },
     { id: 'mayor-bellweather-ch1', name: 'Mayor Bellweather', motive: 'Land development', emoji: '🏛' },
   ],
-  correctSuspectId: 'mayor-bellweather-ch1',
+  // Different from Ch1-C4 (mayor-bellweather-ch1) to avoid consecutive repeat
+  correctSuspectId: 'caretaker-jones',
 };
 
 // ── Export ───────────────────────────────────────────────────────────────────

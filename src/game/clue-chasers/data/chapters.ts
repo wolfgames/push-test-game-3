@@ -49,7 +49,7 @@ export const TUTORIAL_CHAPTER: ChapterData = {
 export const CHAPTER_1: ChapterData = {
   id: 'chapter-1',
   chapterIndex: 1,
-  title: 'The Haunted Mansion Mystery',
+  title: 'The Haunted Hayride', // GDD § Tutorial → Chapter 1 Transition: "Chapter 1: The Haunted Hayride"
   sceneId: 'mansion',
   suspects: [
     { id: 'caretaker-jones', name: 'Caretaker Jones', motive: 'Hidden treasure', emoji: '🔑' },

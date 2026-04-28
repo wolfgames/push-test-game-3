@@ -70,10 +70,12 @@ const T2: CaseLayout = {
   isIntro: false,
   skipDeduction: false,
   hotspots: [
-    // 3 evidence
+    // 5 evidence (clueSlotsRequired=5 — all must be collectable)
     { id: 't2-h1', x: 80, y: 300, outcome: 'evidence', evidenceType: 'voice', locked: false },
     { id: 't2-h2', x: 170, y: 250, outcome: 'evidence', evidenceType: 'disguise', locked: false },
     { id: 't2-h3', x: 280, y: 350, outcome: 'evidence', evidenceType: 'footprint', locked: false },
+    { id: 't2-h6', x: 200, y: 150, outcome: 'evidence', evidenceType: 'document', locked: false },
+    { id: 't2-h7', x: 320, y: 180, outcome: 'evidence', evidenceType: 'fingerprint', locked: false },
     // 1 red herring (teaches lesson)
     { id: 't2-h4', x: 340, y: 280, outcome: 'red-herring', evidenceType: null, locked: false },
     // 1 empty (teaches patience)

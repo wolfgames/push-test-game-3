@@ -110,9 +110,10 @@ export function generateLevel(options: GenerateLevelOptions): CaseLayout {
     const sceneIndex = Math.floor(rng() * SCENE_IDS.length);
     const sceneId = SCENE_IDS[sceneIndex];
 
-    // 2. Suspect pool (from Chapter 1)
+    // 2. Suspect pool (from Chapter 1) — correct suspect chosen by seeded RNG (GDD Step 2)
     const suspects = [...CHAPTER_1.suspects];
-    const correctSuspectId = CHAPTER_1.correctSuspectId;
+    const suspectIndex = Math.floor(rng() * suspects.length);
+    const correctSuspectId = suspects[suspectIndex].id;
 
     // 3. Evidence placement — shuffle EVIDENCE_TYPES to assign to hotspots
     const evidencePool = [...EVIDENCE_TYPES];
