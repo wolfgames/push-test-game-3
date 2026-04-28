@@ -27,6 +27,7 @@ import { HotspotRenderer } from './renderers/HotspotRenderer';
 import { EvidenceTokenRenderer } from './renderers/EvidenceTokenRenderer';
 import { ClueBoardRenderer } from './renderers/ClueBoardRenderer';
 import { HudRenderer } from './renderers/HudRenderer';
+import { getTutorialCase } from './data/hand-crafted-cases';
 import type { CleanupFn } from './state/bridgeEcsToSignals';
 
 const VIEWPORT_HEIGHT = 844;
@@ -35,12 +36,15 @@ const DOM_BOTTOM_RESERVED = 56;
 const CLUE_BOARD_HEIGHT = 100;
 const SCENE_CANVAS_HEIGHT = VIEWPORT_HEIGHT - DOM_BOTTOM_RESERVED - CLUE_BOARD_HEIGHT; // 688
 
-// Placeholder case data for batch 1 (library scene)
-const PLACEHOLDER_HOTSPOTS = [
-  { id: 'h1', x: 130, y: 300, outcome: 'evidence' as const, evidenceType: 'footprint' as const, locked: false },
-  { id: 'h2', x: 200, y: 250, outcome: 'evidence' as const, evidenceType: 'document' as const, locked: false },
-  { id: 'h3', x: 270, y: 350, outcome: 'red-herring' as const, evidenceType: null, locked: false },
+// Load tutorial-1 hand-crafted case (library scene) as the starting case.
+// Falls back to a minimal safe layout if data is missing.
+const _t1 = getTutorialCase('T1');
+const TUTORIAL_HOTSPOTS = _t1?.hotspots ?? [
+  { id: 'h1', x: 120, y: 280, outcome: 'evidence' as const, evidenceType: 'footprint' as const, locked: false },
+  { id: 'h2', x: 220, y: 320, outcome: 'evidence' as const, evidenceType: 'document' as const, locked: false },
+  { id: 'h3', x: 310, y: 200, outcome: 'evidence' as const, evidenceType: 'fingerprint' as const, locked: false },
 ];
+const TUTORIAL_REQUIRED_SLOTS = _t1?.clueSlotsRequired ?? 3;
 
 export function createGameController(deps: GameControllerDeps): GameController {
   const [ariaText, setAriaText] = createSignal('Game loading...');
@@ -123,15 +127,15 @@ export function createGameController(deps: GameControllerDeps): GameController {
     sceneLayer.addChild(sceneRenderer.container);
 
     hotspotRenderer = new HotspotRenderer();
-    hotspotRenderer.init(PLACEHOLDER_HOTSPOTS);
+    hotspotRenderer.init(TUTORIAL_HOTSPOTS);
     sceneLayer.addChild(hotspotRenderer.container);
 
     // Evidence token renderer
     evidenceTokenRenderer = new EvidenceTokenRenderer();
 
-    // Clue Board HUD at bottom of canvas
+    // Clue Board HUD at bottom of canvas — use hand-crafted required slots
     clueBoardRenderer = new ClueBoardRenderer();
-    clueBoardRenderer.init({ viewportWidth: w, hudHeight: CLUE_BOARD_HEIGHT, requiredSlots: 3 });
+    clueBoardRenderer.init({ viewportWidth: w, hudHeight: CLUE_BOARD_HEIGHT, requiredSlots: TUTORIAL_REQUIRED_SLOTS });
     clueBoardRenderer.container.y = SCENE_CANVAS_HEIGHT;
     uiLayer.addChild(clueBoardRenderer.container);
 
@@ -157,7 +161,7 @@ export function createGameController(deps: GameControllerDeps): GameController {
 
       const pos = event.global;
       // Check if tap is on a hotspot
-      const hotspot = PLACEHOLDER_HOTSPOTS.find((h) => {
+      const hotspot = TUTORIAL_HOTSPOTS.find((h) => {
         const dx = pos.x - h.x;
         const dy = pos.y - h.y;
         return Math.abs(dx) <= 22 && Math.abs(dy) <= 22;

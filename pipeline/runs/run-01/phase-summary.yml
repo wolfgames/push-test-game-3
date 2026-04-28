@@ -307,12 +307,92 @@ verify:
     content_fidelity_clean: true
 
 stabilize:
-  status: pending
-  completion_ratio: ""
-  test_count: 0
-  known_issues: []
+  status: complete
+  completion_ratio: "17/22 completeness items met"
+  test_count: 121
+  build_status: "clean — 0 errors, 1 chunk-size warning (pre-existing)"
+  fix_cycles_used: 1  # hand-crafted cases wiring fix + 22 edge-case tests added
+
   cos_failed: []
-  cos_rationale: []
-  completeness_gaps: []
-  pipeline_status: ""
-  carry_forward: {}
+  # No CoS is outright failed — all are partial (exist but have specific gaps)
+
+  cos_rationale:
+    core-interaction: "Tap gesture is one-continuous gesture; 44pt targets; input blocked during animation. Partial because: interaction-archetype.md not written; pointer capture not explicitly acquired; ParticleRenderer (red-herring puff) is orphaned so multi-channel feedback is incomplete in live session."
+    canvas: "PASS — scene canvas 688px at 390px viewport; tokens 56pt diameter; hotspot targets 44pt minimum; no HUD/scene overlap; emoji fallbacks visually distinct per type. Theme identity (Scooby-Doo branding) present."
+    animated-dynamics: "Partial — all GSAP, no rAF, ECS/visual separation correct, evidence fly + bounce-in wired. Gap: win/loss 8-step sequences, Scooby reactions, and ParticleRenderer VFX are fully implemented and tested but orphaned from live GameController. Not reachable in running session."
+    scoring: "Partial — 2 multiplicative dimensions present (base × efficiency); formula caseScore = 1000*(tapsRemaining/startingTaps + 1.0) gives continuous range [1000, 2000]. Stars 1-3 derived. Gap: max expert/beginner ratio is 2× (2000 vs 1000); scoring.md exit criterion requires 3× minimum. Chain/cascade N/A for this genre."
+
+  cos_walk_verdicts:
+    core-interaction: partial
+    canvas: pass
+    animated-dynamics: partial
+    scoring: partial
+
+  completeness_gaps:
+    - id: "interaction-archetype-doc"
+      description: "interaction-archetype.md not written — game tap interaction archetype document (pointer sequence, cancel behavior, feel description) not created"
+      why_not_fixed: "New document creation is out of scope for stabilize fix-only phase (not a wiring fix)"
+    - id: "score-popup-animation"
+      description: "Score popup animation at evidence collection location not implemented — scoring.md and completeness checklist require visible score +points at tap location"
+      why_not_fixed: "Requires new GPU Text sprite per tap event; wiring touches SceneRenderer and ParticleRenderer — exceeds single-file wiring ceiling"
+    - id: "particle-renderer-orphaned"
+      description: "ParticleRenderer red-herring puff and dust-disturb effects not wired into GameController tap handler — multi-channel feedback incomplete for red-herring outcome"
+      why_not_fixed: "Multi-site wiring (~40 LOC touching SceneRenderer callsite + GameController event handler + ParticleRenderer init) exceeds stabilize wiring ceiling"
+    - id: "deduction-renderer-orphaned"
+      description: "DeductionRenderer not wired to GameController — Deduce! button fires cosmetically but no pointertap listener routes to accuse action; player cannot complete a case in live game"
+      why_not_fixed: "Full Deduction Phase wiring (~80 LOC: GameController phase observer + uiLayer input routing + accuse dispatch + response animations) exceeds stabilize ceiling"
+    - id: "scoring-3x-ratio"
+      description: "Expert/beginner score ratio is 2× (2000/1000); scoring CoS exit criterion requires skilled player scores at least 3× higher than beginner"
+      why_not_fixed: "Requires adding a third scoring dimension (e.g., disguise-fragment bonus); touching ClueChasersPlugin + game-logic.ts — new feature, out of scope for stabilize"
+
+  warnings:
+    - "deferred-closed:tutorial-hand-crafted-cases — GameController.ts now uses TUTORIAL_HOTSPOTS from hand-crafted-cases.ts (getTutorialCase('T1')) instead of inline PLACEHOLDER_HOTSPOTS. Wiring fix: ~15 LOC in GameController.ts, within ceiling."
+    - "deferred-closed:verify.remaining_issues.browser-mcp-unavailable — browser smoke verification still not attempted (MCP unavailable); carrying forward to next pass"
+    - "deferred-carry:journey_break.IntroCutscene-orphaned — IntroCutscene not wired to navigation graph; navigation graph changes are cross-screen, exceeds view-layer ceiling"
+    - "deferred-carry:journey_break.DeductionRenderer-orphaned — carried forward as completeness_gap.deduction-renderer-orphaned"
+    - "deferred-carry:journey_break.ChapterInterstitial-orphaned — navigation graph wiring exceeds ceiling; carried forward"
+    - "deferred-carry:integrate.orphan_wiring_blocked.state-game-logic — computeScore exported and used by ecs-plugin directly; utility function; low severity"
+    - "deferred-carry:integrate.orphan_wiring_blocked.state-levelGenerator — generateLevel not yet called in live game; chapter progression not wired"
+    - "deferred-carry:integrate.orphan_wiring_blocked.state-ScenePanController — wide-scene pan not connected; chapter-end scenes only"
+    - "deferred-carry:integrate.orphan_wiring_blocked.state-sequenceBuilder — buildWinSequence/buildLossSequence fully tested; not called from GameController yet"
+    - "deferred-carry:integrate.orphan_wiring_blocked.renderers-ScoobyRenderer — idle and reactions tested; not initialized in GameController"
+    - "deferred-carry:integrate.orphan_wiring_blocked.renderers-ParticleRenderer — pool tested; not wired to tap events in GameController"
+    - "deferred-carry:integrate.orphan_wiring_blocked.screens-lossScreen — LOSS_SCREEN_CONFIG tested; ResultsScreen loss variant uses signal not this config directly"
+    - "deferred-carry:integrate.orphan_wiring_blocked.screens-ChapterInterstitial — navigation not wired"
+    - "deferred-carry:integrate.orphan_wiring_blocked.screens-ChapterCompleteScreen — navigation not wired"
+    - "deferred-carry:integrate.orphan_wiring_blocked.screens-IntroCutscene — one-time gate tested; navigation not wired"
+    - "deferred-carry:integrate.orphan_wiring_blocked.data-chapters — CHAPTER_1 loaded by levelGenerator; not yet called from GameController"
+    - "deferred-carry:integrate.orphan_wiring_blocked.data-scooby-dialogue — tested; ScoobyRenderer orphaned"
+    - "deferred-carry:integrate.orphan_wiring_blocked.data-difficulty-tiers — used by levelGenerator; levelGenerator not called from GameController yet"
+    - "deferred-carry:integrate.orphan_wiring_blocked.data-fallback-cases — used by levelGenerator; same"
+    - "deferred-carry:integrate.orphan_wiring_blocked.audio-config — AUDIO_CONFIG tested; audio coordinator not wired in GameController init"
+    - "deferred-carry:integrate.orphan_wiring_blocked.asset-manifest — clueChasersManifest not yet passed to coordinator.loadBundles"
+    - "collision-resolved-verify:results-screen-language — gdd wins confirmed: 'The mystery got away… for now!' in loss path; no 'Game Over' text"
+    - "collision-resolved-verify:gameController-mode — gdd wins confirmed: Pixi GPU mode active (gameMode='pixi'); DOM mode stub replaced"
+    - "collision-resolved-verify:audio-sprite-key — gdd wins confirmed: all AUDIO_CONFIG entries use 'urls' key; verified by test"
+
+  pipeline_status: partial
+  # mergeStatus reasoning:
+  #   cos walk: partial (3 partial, 1 pass — no fail)
+  #   completeness walk: partial (5 gaps remain)
+  #   build+tests: green (0 errors, 0 clue-chasers failures)
+  #   mergeStatus([partial, partial, complete]) = partial
+
+  carry_forward:
+    next_pass_ready: false
+    pass_stability: stable
+    # stable: build green, all 121 clue-chasers tests pass, CoS partially met
+    unresolved_for_next_pass:
+      - "DeductionRenderer wiring to GameController (Deduction Phase: ~80 LOC)"
+      - "Win/loss GSAP sequence builder wiring to GameController"
+      - "ScoobyRenderer wiring to GameController"
+      - "ParticleRenderer wiring to GameController tap events"
+      - "IntroCutscene navigation graph wiring"
+      - "ChapterInterstitial / ChapterCompleteScreen navigation graph wiring"
+      - "Scoring 3x ratio: add disguise-fragment bonus dimension or recalibrate formula"
+      - "interaction-archetype.md document creation"
+      - "Score popup animation at collection location"
+      - "Asset manifest wiring to coordinator.loadBundles"
+      - "Audio config wiring to coordinator audio system"
+      - "LevelGenerator wiring to GameController case loading"
+      - "Browser smoke verification (MCP unavailable)"

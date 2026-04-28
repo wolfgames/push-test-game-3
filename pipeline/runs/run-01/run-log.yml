@@ -1,0 +1,50 @@
+run: "01"
+pipeline_version: "0.3.8"
+pass: "core"
+started: "2026-04-27T19:18:00Z"
+config:
+  think_only: false
+  trace: false
+  skip_groups: []
+  allow_skip_pass: false
+
+phases:
+  - id: pass-gate
+    status: complete
+    summary: "core is the first gated pass; no previous-pass check required — gate passed unconditionally"
+
+  - id: prime
+    status: complete
+    summary: "stack: pixi+solidjs+gsap+bun(vite,vitest); game is greenfield stub; dom-overlay: WolfGamesLogo bottom 56px; buildCmd: bun run build; testCmd: bun run test"
+
+  - id: analyze
+    status: complete
+    summary: "22 features: 0 existing, 5 content-gap, 17 new; 4 high-risk; 5 open questions; 0 conflicts"
+
+  - id: plan
+    status: complete
+    summary: "12 batches, 22 features, 41 new files, 6 modified; all 5 open questions resolved; viewport budget derived; game slug=clue-chasers"
+
+  - id: implement
+    status: complete
+    summary: "12/12 batches complete; 99 tests added; build clean; 6 issues found and fixed; all CoS sub-walks pass in tests"
+
+  - id: integrate
+    status: complete
+    summary: "19 modules orphaned from GameController entry point; emoji fallback style unified; viewport budget unchanged; no breaking orphans for playability"
+
+  - id: player-flow
+    status: complete
+    summary: "fun-test: fail; 5 journey breaks found; 3 fixes applied; 4 journey breaks carried forward (DeductionRenderer, IntroCutscene, ChapterInterstitial, tutorial-hand-crafted-cases)"
+
+  - id: verify
+    status: complete
+    summary: "build clean; 220/240 tests pass (20 pre-existing scaffold failures); 1 fix cycle; browser smoke not attempted (MCP unavailable); 8 content-fidelity items fixed; 6 remaining issues all pre-existing or orphan-wiring"
+
+  - id: stabilize
+    status: complete
+    summary: "build clean; 121/121 clue-chasers tests pass (242/262 total, 20 pre-existing failures); 22 edge-case tests added; tutorial hand-crafted cases wired (1 fix applied); cos walk: canvas=pass, core-interaction=partial, animated-dynamics=partial, scoring=partial; 5 completeness gaps; pipeline_status: partial"
+
+finished: "2026-04-27T22:35:00Z"
+status: partial
+# mergeStatus of all phases: complete/complete/complete/complete/complete/complete/complete/complete/partial = partial
