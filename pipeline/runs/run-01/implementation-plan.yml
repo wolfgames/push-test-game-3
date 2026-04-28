@@ -1,0 +1,1016 @@
+# implementation-plan.yml — Structured batch execution plan
+# Written by phase 30 (plan). Read by implement, integrate, player-flow, stabilize.
+
+game: "Scooby-Doo: Clue Chasers"
+gdd_type: "additive"
+total_batches: 12
+total_features: 22
+new_files: 41
+modified_files: 6
+
+viewport_budget:
+  default:
+    dom_reserved_top: 0
+    dom_reserved_bottom: 56
+    clue_board_hud_bottom: 100
+    tap_counter_hud_top: 44
+    scene_canvas_available: 688
+    scene_canvas_width: 390
+    total_viewport_height: 844
+    sources:
+      - "dom_reserved_bottom=56 from prime.carry_forward.reserved_bottom_px (WolfGamesLogo 24px + 8px bottom margin = absolute bottom-8 ≈ 32px, total DOM overlay ~56px)"
+      - "clue_board_hud_bottom=100 from gdd-analysis.yml feature clue-board notes: 'Viewport budget: 100pt reserved at bottom for Clue Board HUD'"
+      - "tap_counter_hud_top=44 from gdd-analysis.yml feature tap-counter: 44x44pt minimum touch target, top-right HUD placement"
+      - "scene_canvas_available=844-56-100=688 (viewport - DOM bottom - Clue Board HUD)"
+  tutorial:
+    dom_reserved_top: 0
+    dom_reserved_bottom: 56
+    clue_board_hud_bottom: 100
+    tap_counter_hud_top: 0
+    scene_canvas_available: 688
+    notes: "Tutorial Level 1: tap counter hidden; Clue Board shows 3 slots (2 locked)"
+
+resolved_questions:
+  - question: "What is the game's slug? Replace 'mygame' in src/game/mygame/?"
+    decision: "clue-chasers"
+    rationale: "Derived from GDD title 'Scooby-Doo: Clue Chasers'. Lowercase, hyphenated, slug-safe. No conflicting branding constraints noted in GDD. Full path: src/game/clue-chasers/"
+
+  - question: "Does the game need a multiplicative scoring formula beyond the 1-3 star rating?"
+    decision: "caseScore = basePoints * efficiencyMultiplier where basePoints = 1000 (case complete), efficiencyMultiplier = (tapsRemaining / startingTaps) + 1.0 clamped to [1.0, 2.0]. Stars are a derived display (3 stars = caseScore >= 1500, 2 stars >= 1200, 1 star >= 1000)."
+    rationale: "CoS scoring (core pass) requires multiplicative dimensions. Pure star-only rating is a single flat tier. Adding efficiency multiplier (taps remaining / starting taps) gives continuous leaderboard striation: beginner who barely solves scores 1000-1100, expert who solves with many taps remaining scores up to 2000. Two multiplicative dimensions: base completion × efficiency. Star thresholds derived from this formula."
+
+  - question: "What is the scope of the in-game coin/currency system for the 'Keep Going' continue mechanic?"
+    decision: "Simple pre-wired integer coin balance stored in ECS resource. No external currency service. Coins start at 0, player earns 10 coins per chapter completion. Loss screen shows coin balance. 'Keep Going' = spend 5 coins for 5 bonus taps. No ad integration in core pass (button present but wired to coin path only)."
+    rationale: "Core pass scope: wiring the mechanic without a full economy service. Ad integration is secondary-pass concern. Coin balance persists in localStorage via player prefs."
+
+  - question: "What asset scope is required for the core pass?"
+    decision: "Core pass covers Tutorial (T1, T2) + Chapter 1 (5 cases) only. That is 7 scene layouts, 3 villain suspects for Chapter 1, 5 evidence token types, and Scooby companion sprites. Chapters 2-3 are post-launch content. Asset manifest groups: scene-ch1 bundle (Chapter 1 scene backgrounds), scene-tutorial bundle (T1/T2 backgrounds), core-ui bundle (evidence tokens, HUD elements, Scooby sprites)."
+    rationale: "15 scenes in full scope would over-scope a single pipeline run. Tutorial + Chapter 1 = complete playable arc. Chapters 2-3 added via separate pipeline runs."
+
+  - question: "What are the exact tap-remaining thresholds for 1, 2, and 3 stars per difficulty tier?"
+    decision: "Star thresholds derived from scoring formula (caseScore >= 1500 = 3 stars, >= 1200 = 2 stars, >= 1000 = 1 star). In tap terms: Easy tier (15 start taps): 3 stars if >= 7 remaining (score >= 1467), 2 stars if >= 3 remaining (score >= 1200), 1 star if 0 remaining (score = 1000). Tutorial T2 (12 start taps): counter visible but no star rating shown (tutorial win is always 1-star equivalent, full star rating from Ch1-C1 onward). Hard tier (12 start): 3 stars >= 7 remaining, 2 stars >= 3 remaining, 1 star >= 1."
+    rationale: "Derived from efficiencyMultiplier formula. Consistent across tiers relative to starting tap count."
+
+preserve_list: []
+
+batches:
+
+  # ---------------------------------------------------------------------------
+  # BATCH 1 — ECS Foundation + GameController (Pixi) + Scene Canvas + Hotspot + Evidence + Clue Board
+  # The hook batch: player sees a scene and can tap hotspots. Evidence flies to board.
+  # ---------------------------------------------------------------------------
+  - id: 1
+    name: "Hook — ECS, GameController (Pixi), Scene Canvas, Hotspot, Evidence Token, Clue Board"
+    priority: P0
+    player_visible: "player sees a scene investigation canvas with shimmering hotspots; tapping a hotspot shows a circular evidence token fly-arc to the Clue Board strip at bottom"
+    features:
+      - ecs-game-state
+      - gameplay-screen
+      - hotspot-system
+      - evidence-token
+      - clue-board
+    cos_covered:
+      - core-interaction
+      - canvas
+      - animated-dynamics
+      - scoring
+    ux_zones:
+      thumb_zone: [center, natural]
+      touch_targets: [hotspot-tap-44pt, deduce-button]
+      feedback_surfaces: [scene-canvas, clue-board-hud, hud-bottom-strip, token-slots, shimmer-animation]
+    acceptance:
+      # ecs-game-state
+      - given: "game initializes"
+        should: "ECS plugin mounts with resources tapCounter, clueBoardState, gamePhase, currentScore, starsEarned all at default values; bridgeEcsToSignals wires without error"
+      - given: "ECS action tapHotspot is dispatched with a seeded RNG"
+        should: "action is pure (no Math.random, no Pixi imports); returns animation metadata object with outcome and position"
+      # gameplay-screen
+      - given: "GameController.init() is called with a container div"
+        should: "Pixi Application mounts on GPU canvas (gameMode = 'pixi'); stage renders scene background sprite; no DOM elements created inside the canvas container"
+      - given: "GameController.destroy() is called"
+        should: "GSAP tweens killed, Pixi app destroyed, ECS bridge cleaned up, setActiveDb(null) called"
+      # hotspot-system
+      - given: "scene loads with 3 active hotspots"
+        should: "each hotspot has a 44x44pt minimum touch target; shimmer animation (scale 1.0→1.03, 1400ms GSAP loop) plays on each active hotspot"
+      - given: "player taps an active hotspot during Investigating phase"
+        should: "tap is processed within 100ms; hotspot transitions to spent (dimmed, non-interactive); ECS tapHotspot action fires"
+      - given: "player taps during Animating phase (input locked)"
+        should: "tap is ignored; no state change; first queued tap after animation completes fires"
+      - given: "player taps a locked hotspot"
+        should: "padlock-shake animation (150ms) plays; Scooby VO 'Ruh-roh!' cue queued; tap counter NOT decremented"
+      # evidence-token
+      - given: "tapHotspot returns evidence outcome"
+        should: "circular badge (56pt) animates from hotspot position to next open Clue Board slot with 220ms arc tween back.out(1.7)"
+      - given: "all 5 Clue Board slots are filled and player taps another evidence hotspot"
+        should: "no fly-arc animation; hotspot shows brief shake (120ms); no tap consumed"
+      # clue-board
+      - given: "evidence token lands in a Clue Board slot"
+        should: "slot bounce-in animation (80ms elastic.out) plays; slot shows correct token type emoji fallback"
+      - given: "all 5 clue slots fill"
+        should: "golden-glow pulse (800ms half-cycle) plays on Clue Board; Deduce! button scales in (300ms back.out)"
+      # CoS canvas exit criteria
+      - given: "game renders at 390x844 viewport"
+        should: "scene canvas occupies >= 688px height (viewport 844 - 56 DOM bottom - 100 Clue Board); no HUD overlaps scene content; hotspot touch targets >= 48x48px visible"
+      # CoS scoring: multiplicative formula present
+      - given: "case completes"
+        should: "caseScore = 1000 * (tapsRemaining/startingTaps + 1.0); score varies with efficiency (1000 minimum, 2000 maximum)"
+    test_loci:
+      - describe: "ClueChasersPlugin: ECS resources and actions"
+        file: "tests/clue-chasers/ecs-plugin.test.ts"
+        cases:
+          - "mounts with correct default resource values"
+          - "tapHotspot action is pure (no Math.random, no Pixi)"
+          - "tapHotspot evidence outcome: decrements tapCounter, returns animation metadata"
+          - "tapHotspot red-herring outcome: decrements tapCounter, returns puff metadata"
+          - "tapHotspot locked-hotspot: does not decrement tapCounter"
+          - "fillClueBoardSlot transaction fills slot in order"
+          - "caseScore formula: base * efficiency, clamped [1000, 2000]"
+      - describe: "HotspotRenderer: touch targets and shimmer"
+        file: "tests/clue-chasers/hotspot-renderer.test.ts"
+        cases:
+          - "each hotspot hitArea >= 44x44pt"
+          - "shimmer GSAP tween created with scale 1.0->1.03 at 1400ms"
+          - "spent hotspot is non-interactive after tap"
+      - describe: "EvidenceToken: fly-arc animation"
+        file: "tests/clue-chasers/evidence-token.test.ts"
+        cases:
+          - "fly-arc tween target is next open Clue Board slot position"
+          - "board-full edge case: shake plays, no token created"
+      - describe: "ClueBoardRenderer: slots and golden-glow"
+        file: "tests/clue-chasers/clue-board-renderer.test.ts"
+        cases:
+          - "5 slots rendered with correct initial state"
+          - "slot bounce-in on token land"
+          - "golden-glow activates when all 5 slots filled"
+          - "Deduce button scales in (300ms) when board full"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+        - src/game/clue-chasers/state/game-logic.ts
+        - src/game/clue-chasers/state/bridgeEcsToSignals.ts
+        - src/game/state.ts
+      integration:
+        - src/game/clue-chasers/GameController.ts
+        - src/game/clue-chasers/renderers/SceneRenderer.ts
+        - src/game/clue-chasers/renderers/HotspotRenderer.ts
+        - src/game/clue-chasers/renderers/EvidenceTokenRenderer.ts
+        - src/game/clue-chasers/renderers/ClueBoardRenderer.ts
+        - src/game/clue-chasers/renderers/HudRenderer.ts
+        - src/game/clue-chasers/asset-manifest.ts
+        - src/game/clue-chasers/index.ts
+      test:
+        - tests/clue-chasers/ecs-plugin.test.ts
+        - tests/clue-chasers/hotspot-renderer.test.ts
+        - tests/clue-chasers/evidence-token.test.ts
+        - tests/clue-chasers/clue-board-renderer.test.ts
+    how:
+      - "Replace DOM-mode gameController.ts stub: rename src/game/mygame/ → src/game/clue-chasers/; set gameMode='pixi'; mount Pixi Application with resizeTo container. Wire ECS plugin init: Database.create(ClueChasersPlugin) → setActiveDb → bridgeEcsToSignals. Layers: bgLayer, sceneLayer, hudLayer (eventMode per gpu-vs-dom.mdc rule)."
+      - "ClueChasersPlugin: resources (tapCounter, clueBoardState[5], gamePhase, currentScore, starsEarned, selectedSuspect, correctSuspect, coinBalance). Actions (tapHotspot, accuse, retryCase, continueCase) pure: no Math.random, no Pixi. Transactions (decrementTapCounter, fillClueBoardSlot, setGamePhase, addScore). Plugin property order: resources → transactions → actions."
+      - "HotspotRenderer: creates Container per hotspot with hitArea Rectangle(0,0,44,44); emoji fallback (🔍) as Text until atlas loads; shimmer via gsap.to(sprite, {pixi:{scaleX:1.03,scaleY:1.03}, duration:0.7, yoyo:true, repeat:-1}). EvidenceTokenRenderer: arc tween from tapPos to slot position using GSAP motionPath or x/y tween with cubic ease. ClueBoardRenderer: 5 slot containers bottom HUD strip 100px tall."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 13 acceptance rows covered)"
+      - "integration call site exists at src/game/clue-chasers/GameController.ts"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, canvas, animated-dynamics, scoring"
+      - "touch targets >= 44px and feedback surfaces present per ux_zones"
+      - "screen root (GameScreen.tsx) consumes reserved_bottom_px=56 as padding; Clue Board consumes 100px bottom of GPU canvas"
+      - "no DOM createElement or CSS inside src/game/clue-chasers/ (guardrail #1)"
+      - "no stubs or placeholder text visible in GPU canvas (guardrail #15)"
+      - "src/game/mygame/ renamed to src/game/clue-chasers/; no literal 'mygame' in new files"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: HIGH
+    risk_reason: "GameController is central integration point. ECS plugin is source of truth for all state. Touches renderer, input, ECS, layout simultaneously. Failure blocks all downstream batches."
+    rollback: "If Pixi Application fails to mount or ECS plugin throws, revert GameController to DOM mode (restore stub) and fix plugin error before proceeding."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 2 — Tap Counter + Scoring Formula + Win/Loss ECS State + Results Screen (win)
+  # Player can complete a case and see star rating.
+  # ---------------------------------------------------------------------------
+  - id: 2
+    name: "Core Loop Completion — Tap Counter, Scoring, Win State, Level Complete Screen"
+    priority: P0
+    player_visible: "player sees tap counter decrement with scale-pop on each evidence/red-herring tap; solving case triggers level-complete screen with 1-3 star rating and Next Case button"
+    features:
+      - tap-counter
+      - scoring-star-rating
+      - level-complete-screen
+    cos_covered:
+      - canvas
+      - animated-dynamics
+      - scoring
+    ux_zones:
+      thumb_zone: [out-of-reach, center]
+      touch_targets: [next-case-button]
+      feedback_surfaces: [hud-top-right, tap-counter-widget, star-fill-animation, level-complete-screen, unmasking-flip-card]
+    acceptance:
+      # tap-counter
+      - given: "player taps an evidence or red-herring hotspot"
+        should: "tap counter decrements by 1; scale-pop animation (1.0→1.15→1.0, 120ms back.out) fires on counter widget"
+      - given: "tap counter reaches <= 3"
+        should: "counter widget pulses red tint (300ms loop x3) as warning feedback"
+      - given: "tap counter reaches 0 with clue board not full"
+        should: "loss sequence triggers immediately (gamePhase transitions to Loss)"
+      - given: "empty-hotspot tap (no outcome)"
+        should: "tap counter does NOT decrement; no animation on counter"
+      # scoring-star-rating
+      - given: "case is solved (correct accusation)"
+        should: "caseScore = 1000 * (tapsRemaining/startingTaps + 1.0); starsEarned = 3 if caseScore >= 1500, 2 if >= 1200, 1 if >= 1000"
+      - given: "Tutorial Level 1 case ends"
+        should: "star rating is not displayed (tutorial T1 auto-win, no star UI)"
+      # level-complete-screen
+      - given: "correct accusation is made and win sequence triggers"
+        should: "ResultsScreen renders with win variant: villain name banner, 1-3 star fill animation (200ms per star sequential), Next Case button bottom-center"
+      - given: "player taps Next Case button"
+        should: "gameState advances to next case index; screen transitions to game screen"
+      # CoS scoring cross-check: multiplicative dimensions
+      - given: "two players solve the same case; player A has 12 taps remaining, player B has 2 taps remaining (Easy tier, 15 start)"
+        should: "player A score >= 1800, player B score <= 1133; difference >= 600 (continuous striation)"
+    test_loci:
+      - describe: "TapCounter: decrement and warning states"
+        file: "tests/clue-chasers/tap-counter.test.ts"
+        cases:
+          - "evidence tap decrements counter by 1"
+          - "red-herring tap decrements counter by 1"
+          - "empty tap does not decrement"
+          - "counter at 3 triggers warning-pulse"
+          - "counter at 0 triggers loss phase transition"
+      - describe: "Scoring: star rating thresholds"
+        file: "tests/clue-chasers/scoring.test.ts"
+        cases:
+          - "caseScore formula: base * efficiency, 1000 min 2000 max"
+          - "3-star threshold: caseScore >= 1500"
+          - "2-star threshold: caseScore >= 1200"
+          - "1-star threshold: caseScore >= 1000"
+          - "two-player striation: high efficiency >> low efficiency"
+      - describe: "ResultsScreen: win variant"
+        file: "tests/clue-chasers/results-win.test.ts"
+        cases:
+          - "win variant renders star fill animation (not Game Over text)"
+          - "Next Case button navigates to game screen"
+          - "screen consumes reserved_bottom_px=56 as padding"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+        - src/game/clue-chasers/state/game-logic.ts
+      integration:
+        - src/game/clue-chasers/renderers/HudRenderer.ts
+        - src/game/clue-chasers/GameController.ts
+        - src/game/screens/ResultsScreen.tsx
+      test:
+        - tests/clue-chasers/tap-counter.test.ts
+        - tests/clue-chasers/scoring.test.ts
+        - tests/clue-chasers/results-win.test.ts
+    how:
+      - "Add tapCounter resource decrement in ClueChasersPlugin.transactions.decrementTapCounter; emit 'tapCounterChanged' animation event. HudRenderer.updateTapCounter(): GSAP scale-pop on counter widget; warning pulse when value <= 3. Tap counter widget at top-right HUD (Stretching zone per UX guidelines)."
+      - "Add scoring formula in game-logic.ts: computeScore(tapsRemaining, startingTaps). Add starsEarned transaction that derives from caseScore thresholds. bridgeEcsToSignals must propagate starsEarned to SolidJS signal."
+      - "Replace ResultsScreen.tsx 'Game Over' heading and generic score with: win/loss variant prop from gameState signal; win path shows villain name (from caseLayout data), star-fill animation (GSAP sequential), Next Case button at bottom-center."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 9 rows covered)"
+      - "integration call site exists at GameController.ts and HudRenderer.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for canvas, animated-dynamics, scoring"
+      - "tap counter visible at top-right; no overlap with scene content"
+      - "ResultsScreen win variant: no 'Game Over' text; star animation present"
+      - "screen root consumes reserved_bottom_px=56"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "ResultsScreen.tsx is a modified_file (content-gap replacement). Star animation timing must be correct. Scoring formula touches ECS plugin."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 3 — Loss Screen + Continue System
+  # Player can lose a case, see gentle failure, and try again or keep going.
+  # ---------------------------------------------------------------------------
+  - id: 3
+    name: "Loss Path — Loss Screen, Try Again, Continue System (Keep Going)"
+    priority: P0
+    player_visible: "when tap counter hits 0, scene desaturates, loss overlay appears with 'The mystery got away…' text; Try Again and Keep Going buttons visible; Keep Going spends 5 coins for 5 bonus taps"
+    features:
+      - loss-screen
+      - continue-system
+    cos_covered:
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: [try-again-button, keep-going-button]
+      feedback_surfaces: [scene-desaturate, loss-overlay, try-again-cta]
+    acceptance:
+      # loss-screen
+      - given: "tap counter reaches 0 with clue board not full"
+        should: "scene desaturates (GSAP tint shift to grayscale, 350ms); loss overlay fades in (350ms); 'The mystery got away… for now!' text types in (400ms); no 'Game Over' text"
+      - given: "loss screen is showing"
+        should: "Try Again is primary CTA (bottom-center, >= 44pt); Keep Going is secondary CTA below it; Scooby droop-ears animation plays"
+      - given: "player taps Try Again"
+        should: "same case reloads with seed+1 (fresh layout); tap counter resets to starting value"
+      # continue-system
+      - given: "player taps Keep Going with coinBalance >= 5"
+        should: "coinBalance decrements by 5; tapCounter restores to 5 (bonus taps); player returned to game at exact point of loss; loss overlay dismissed"
+      - given: "player taps Keep Going with coinBalance < 5"
+        should: "Keep Going button shows 'Not enough coins' feedback (shake, 200ms); no state change; player remains on loss screen"
+    test_loci:
+      - describe: "LossScreen: overlay and language"
+        file: "tests/clue-chasers/loss-screen.test.ts"
+        cases:
+          - "loss overlay text is 'The mystery got away' (not 'Game Over')"
+          - "scene desaturate tween fires on loss phase transition"
+          - "Try Again reloads case with seed+1"
+      - describe: "ContinueSystem: coin spend and tap restore"
+        file: "tests/clue-chasers/continue-system.test.ts"
+        cases:
+          - "Keep Going with >= 5 coins: coinBalance -= 5, tapCounter += 5, returns to game"
+          - "Keep Going with < 5 coins: shake feedback, no state change"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+        - src/game/clue-chasers/screens/lossScreen.ts
+      integration:
+        - src/game/screens/ResultsScreen.tsx
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/loss-screen.test.ts
+        - tests/clue-chasers/continue-system.test.ts
+    how:
+      - "Add loss variant to ResultsScreen.tsx (parallel to win variant from batch 2); switch on gameState.gameOutcome signal (win|loss). Loss path: 'The mystery got away… for now!' heading, Scooby droop emoji fallback, Try Again primary button, Keep Going secondary with coin cost displayed."
+      - "Add coinBalance resource to ClueChasersPlugin; continueCase action: checks coinBalance >= 5, decrements, restores tapCounter to 5, sets gamePhase back to Investigating. retryCase action: increments seed, resets full case state."
+      - "GameController loss sequence: on Loss phase transition, GSAP tint shift on sceneLayer to grayscale, fade in DOM overlay via signal. Loss overlay is DOM (ResultsScreen variant), not GPU — acceptable as results screen shell."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 5 rows covered)"
+      - "integration call site exists at ResultsScreen.tsx and GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for animated-dynamics"
+      - "no 'Game Over' text in any loss-path element"
+      - "Try Again and Keep Going buttons >= 44pt; >= 8px spacing between them"
+      - "screen root consumes reserved_bottom_px=56"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "ResultsScreen is modified again (third variant branch). Loss phase transition must coordinate GPU desaturate + DOM overlay."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 4 — Tutorial System + Hand-Crafted Levels
+  # Player is onboarded through T1 and T2 with ghost-finger and Scooby dialogue.
+  # ---------------------------------------------------------------------------
+  - id: 4
+    name: "Tutorial — Hand-Crafted Levels T1/T2, Ghost-Finger Pointer, Scooby Dialogue"
+    priority: P1
+    player_visible: "first launch shows Tutorial Level 1 (library, 3 evidence, no fail); ghost-finger pointer pulses on most obvious hotspot after 1s; Scooby speech bubble says 'Rikes! Someone's been in here!'; Tutorial Level 2 introduces tap counter and red herring"
+    features:
+      - tutorial-system
+      - hand-crafted-levels
+    cos_covered:
+      - core-interaction
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: [hotspot-tap-targets]
+      feedback_surfaces: [scene-canvas, ghost-finger-pointer, speech-bubble]
+    acceptance:
+      # tutorial-system
+      - given: "player launches the game for the first time"
+        should: "Tutorial Level 1 loads (library scene, 3 evidence slots visible, 2 locked); ghost-finger pointer appears 1s after load on most obvious hotspot; pointer pulses twice then fades (fires once only)"
+      - given: "player is in Tutorial Level 1"
+        should: "tap counter is hidden (internal cap 20 taps); Deduction Phase is skipped (auto-win after board fills); progress bar hidden"
+      - given: "player taps a hotspot in Tutorial Level 1 for the first time"
+        should: "Scooby pre-level speech bubble shows 'Rikes! Someone's been in here, Shaggy! Let\u2019s look around!' (2.5s auto-dismiss)"
+      - given: "player completes Tutorial Level 1"
+        should: "Tutorial Level 2 loads automatically (mansion foyer, 5 hotspots: 3 evidence + 1 red herring + 1 empty); tap counter visible starting at 12"
+      - given: "player taps first red herring hotspot in T2"
+        should: "Scooby shrug reaction plays (once only); 'wah-wah' SFX queued"
+      # hand-crafted-levels
+      - given: "Tutorial levels are loaded"
+        should: "hand-crafted-cases.ts provides T1 and T2 CaseLayout objects; procedural generator is NOT called for tutorial levels"
+      - given: "hand-crafted-cases.ts is loaded"
+        should: "T1 has clueSlotsRequired=3, tapLimit=20, isIntro=true; T2 has clueSlotsRequired=5, tapLimit=12, isIntro=false"
+    test_loci:
+      - describe: "TutorialSystem: ghost-finger and phase gating"
+        file: "tests/clue-chasers/tutorial-system.test.ts"
+        cases:
+          - "ghost-finger pointer fires once on first session only"
+          - "Tutorial L1: tap counter hidden, Deduction skipped"
+          - "Tutorial L2: tap counter visible at 12, Deduction Phase enabled"
+          - "first red herring tap in T2 triggers shrug reaction (once only)"
+      - describe: "HandCraftedLevels: static layout data"
+        file: "tests/clue-chasers/hand-crafted-cases.test.ts"
+        cases:
+          - "T1 layout: clueSlotsRequired=3, tapLimit=20"
+          - "T2 layout: clueSlotsRequired=5, tapLimit=12, red herring present"
+          - "hand-crafted pool length >= 2 (T1 + T2)"
+    files:
+      state:
+        - src/game/clue-chasers/data/hand-crafted-cases.ts
+        - src/game/clue-chasers/data/scooby-dialogue.ts
+      integration:
+        - src/game/clue-chasers/GameController.ts
+        - src/game/clue-chasers/screens/gameController.ts
+      test:
+        - tests/clue-chasers/tutorial-system.test.ts
+        - tests/clue-chasers/hand-crafted-cases.test.ts
+    how:
+      - "Create hand-crafted-cases.ts with typed CaseLayout[] array. T1: library scene, 3 active hotspot positions, 0 red herrings, 0 locked hotspots, clueSlotsRequired=3, tapLimit=20, isIntro=true. T2: mansion foyer, 5 hotspot positions, 1 red herring, tapLimit=12, isIntro=false. Mark with preserveAcrossPipeline: true per GDD note."
+      - "TutorialSystem in GameController: reads isIntro from caseLayout. If isIntro: hide tap counter widget (alpha 0), bypass Deduction Phase trigger, cap internal taps at 20. Ghost-finger pointer: GSAP-animated Container with paw emoji ('🐾') that scales 1.0→1.2→1.0 (600ms loop x2) then alpha→0; fires after delayedCall(1s)."
+      - "Scooby dialogue: pre/post-level speech bubble DOM overlay (SolidJS signal-driven) with text from scooby-dialogue.ts keyed by caseId + event. Auto-dismiss via GSAP delayedCall(2.5s). First-red-herring reaction: one-shot flag in ECS resource (firstRedHerringReacted), set on first T2 red herring tap."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 7 rows covered)"
+      - "integration call site exists at GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, animated-dynamics"
+      - "ghost-finger fires exactly once per session (not on subsequent loads)"
+      - "hand-crafted-cases.ts marked preserveAcrossPipeline: true comment in file header"
+      - "touch targets >= 44px; progress bar hidden in tutorial"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "First-time player flow is complex. Ghost-finger one-shot state must persist correctly. Tutorial phase gating touches GameController central path."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 5 — Deduction Phase + Suspect Cards
+  # Player can accuse a suspect after filling the Clue Board.
+  # ---------------------------------------------------------------------------
+  - id: 5
+    name: "Deduction Phase — Suspect Card Overlay, Accusation, Wrong-Guess Feedback"
+    priority: P1
+    player_visible: "when Clue Board fills, 'Deduce!' button activates; tapping it dims scene and 3 suspect portrait cards slide up from bottom; player taps a card to accuse; correct = unmasking flip; wrong = card shake + Scooby 'Hmm, nope!'"
+    features:
+      - deduction-phase
+      - suspect-cards
+    cos_covered:
+      - core-interaction
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: [suspect-cards, suspect-card-tap]
+      feedback_surfaces: [suspect-cards, clue-board, scene-dim-overlay, clue-match-glow]
+    acceptance:
+      # deduction-phase
+      - given: "Clue Board is full and Deduce! button is active; player taps it"
+        should: "gamePhase transitions to Deduction; scene dims (alpha 0.5, 300ms GSAP); suspect card overlay slides in (350ms staggered)"
+      - given: "Deduction Phase is active"
+        should: "input on scene hotspots is blocked; only suspect card taps are processed"
+      # suspect-cards
+      - given: "3 suspect cards are shown"
+        should: "each card has portrait emoji fallback, name, motive tagline; touch target >= 44pt; clue-match-glow shows subtle highlight on correct suspect if all 5 clues collected"
+      - given: "player taps correct suspect"
+        should: "card scales up (100ms), unmasking flip animation (600ms GSAP rotationY 0→180) plays; gamePhase transitions to Win"
+      - given: "player taps wrong suspect"
+        should: "card shake animation (200ms, 8px horizontal); tapCounter decrements by 1; Scooby 'Hmm, nope!' VO cue; Deduction Phase remains active (player can retry)"
+      - given: "wrong guess brings tapCounter to 0"
+        should: "loss sequence triggers (same as batch 3 loss path)"
+      # CoS core-interaction: one gesture, rejection feedback
+      - given: "Deduction Phase is active and player taps outside any suspect card"
+        should: "no state change; brief scene-layer pulse feedback (subtle, 150ms)"
+    test_loci:
+      - describe: "DeductionPhase: overlay and input blocking"
+        file: "tests/clue-chasers/deduction-phase.test.ts"
+        cases:
+          - "Deduce! button activates only when clueBoardState all 5 filled"
+          - "scene dim tween fires on Deduction phase entry"
+          - "hotspot input blocked during Deduction phase"
+          - "wrong guess decrements tapCounter"
+          - "wrong guess at 0 taps triggers loss"
+      - describe: "SuspectCards: accusation and feedback"
+        file: "tests/clue-chasers/suspect-cards.test.ts"
+        cases:
+          - "3 suspect cards rendered with name and emoji fallback"
+          - "correct suspect tap: unmasking flip animation dispatched"
+          - "wrong suspect tap: shake animation + 'Hmm nope' VO cue"
+          - "touch targets >= 44pt per card"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+      integration:
+        - src/game/clue-chasers/renderers/DeductionRenderer.ts
+        - src/game/clue-chasers/GameController.ts
+        - src/game/clue-chasers/data/chapters.ts
+      test:
+        - tests/clue-chasers/deduction-phase.test.ts
+        - tests/clue-chasers/suspect-cards.test.ts
+    how:
+      - "DeductionRenderer: GPU Container overlaid on game stage. On Deduction phase entry: GSAP tween sceneLayer alpha to 0.5; createSuspectCards from caseLayout.suspects array (3 per case); cards Container slides up from y=screenHeight to y=center (350ms stagger 0.1s). eventMode='passive' on overlay Container; 'static' on each card sprite."
+      - "Accuse action in ClueChasersPlugin: receives suspectId, checks against correctSuspect resource. If match: setGamePhase(Win), return {correct:true, suspectId}. If not: decrementTapCounter, return {correct:false, shake:suspectId}. GameController calls accuse via ecsDb.actions.accuse."
+      - "Clue-match-glow: if all 5 clues collected, correct suspect card gets subtle tint highlight (0x_FFD700, alpha 0.3). This is a hint, not a reveal — all 3 cards are tappable."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 7 rows covered)"
+      - "integration call site exists at DeductionRenderer.ts and GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, animated-dynamics"
+      - "suspect card touch targets >= 44pt; >= 8px spacing between cards"
+      - "no DOM in DeductionRenderer (GPU Container only per guardrail #1)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Adds new GPU overlay Container managing input routing. Wrong eventMode on overlay Container will break tap propagation silently (guardrail #4)."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 6 — Scene Generation Algorithm + Difficulty Curve + Chapter 1 Data
+  # Player gets procedurally generated Chapter 1 cases (C2-C5) with correct difficulty.
+  # ---------------------------------------------------------------------------
+  - id: 6
+    name: "Level Generator — Scene Generation Algorithm, Difficulty Curve, Chapter 1 Case Data"
+    priority: P1
+    player_visible: "Chapter 1 Cases 2-5 generate distinct scene layouts each play (seeded determinism); difficulty increases gradually; solvability guaranteed (never unwinnable level)"
+    features:
+      - scene-generation-algorithm
+      - difficulty-curve
+      - hand-crafted-levels
+    cos_covered:
+      - core-interaction
+      - scoring
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: []
+      feedback_surfaces: []
+    acceptance:
+      # scene-generation-algorithm
+      - given: "generateLevel(seed=1_001_000, difficultyTier='Easy') is called"
+        should: "returns identical CaseLayout on every call (deterministic seeding)"
+      - given: "generateLevel is called with different seed values"
+        should: "returns different hotspot positions (non-deterministic across seeds)"
+      - given: "generateLevel produces a layout"
+        should: "solvability check passes: simulated optimal play fills clue board before tapLimit exhausted"
+      - given: "solvability check fails after 10 retries"
+        should: "fallback chain promotes corresponding hand-crafted case from fallback-cases.ts"
+      # difficulty-curve
+      - given: "Chapter 1 Cases 1-2 are generated at Easy tier"
+        should: "clueSlotsRequired=3, tapLimit=15, lockedHotspotCount=0"
+      - given: "Chapter 1 Cases 3-5 are generated at Easy+ tier"
+        should: "clueSlotsRequired=5, tapLimit=15, lockedHotspotCount=1"
+      # content-sufficiency: fallback pool
+      - given: "fallback-cases.ts is loaded"
+        should: "fallback pool length >= 7 (T1, T2, Ch1-C1 through Ch1-C5)"
+    test_loci:
+      - describe: "LevelGenerator: determinism and solvability"
+        file: "tests/clue-chasers/level-generator.test.ts"
+        cases:
+          - "seed determinism: same seed always returns same layout"
+          - "different seeds return different layouts"
+          - "solvability: simulated play fills board before tapLimit"
+          - "fallback chain: after 10 retries, hand-crafted fallback promoted"
+          - "seed formula: chapterIndex*100000 + caseIndex*1000 + variantIndex"
+      - describe: "DifficultyTiers: parameter correctness"
+        file: "tests/clue-chasers/difficulty-tiers.test.ts"
+        cases:
+          - "Easy tier: clueSlotsRequired=3, tapLimit=15"
+          - "Easy+ tier: clueSlotsRequired=5, tapLimit=15, lockedHotspots=1"
+          - "no jump > 1 difficulty unit between consecutive cases"
+    files:
+      state:
+        - src/game/clue-chasers/state/levelGenerator.ts
+        - src/game/clue-chasers/state/game-logic.ts
+        - src/game/clue-chasers/data/difficulty-tiers.ts
+        - src/game/clue-chasers/data/hand-crafted-cases.ts
+        - src/game/clue-chasers/data/fallback-cases.ts
+        - src/game/clue-chasers/data/chapters.ts
+      integration:
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/level-generator.test.ts
+        - tests/clue-chasers/difficulty-tiers.test.ts
+    how:
+      - "levelGenerator.ts: pure function generateLevel(seed, difficultyTier) → CaseLayout. Six steps: (1) scene selection (hash from seed), (2) suspect pool from chapters.ts, (3) evidence placement (seeded shuffle), (4) locked hotspot seeding, (5) solvability check (greedy simulation: always pick evidence over red-herring), (6) fallback chain (retry with tier reduction up to 10x, then fallback-cases.ts lookup). No Math.random — use seeded PRNG (mulberry32 or xorshift). Seed formula: chapterIndex*100000 + caseIndex*1000 + variantIndex."
+      - "difficulty-tiers.ts: typed record mapping tier name to {clueSlotsRequired, tapLimit, lockedHotspotCount, redHerringCount}. Tiers: Intro, Easy, Easy+, Medium, Medium+, Hard. Chapter-to-tier mapping in chapters.ts."
+      - "chapters.ts: Chapter 1 data: id='chapter-1', title='The Haunted Mansion Mystery', cases=[Ch1-C1 through Ch1-C5], suspects=[{name:'Caretaker Jones', motive:'Hidden treasure'},{name:'Professor Whitmore', motive:'Research cover-up'},{name:'Mayor Bellweather', motive:'Land development'}], correctSuspectId='mayor-bellweather-ch1'. Case 1 uses hand-crafted layout; Cases 2-5 use procedural generator."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 7 rows covered)"
+      - "integration call site exists at GameController.ts (loadCase calls generateLevel or hand-crafted-cases)"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, scoring"
+      - "fallback pool length >= 7"
+      - "no Math.random() in levelGenerator.ts or game-logic.ts (guardrail #9)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: HIGH
+    risk_reason: "Scene generation algorithm with solvability check is central to game correctness. Incorrect seeding or solvability logic produces unplayable levels. Comprehensive test coverage required."
+    rollback: "If solvability check is buggy, disable procedural generation and fall back to hand-crafted cases only. Flag in carry_forward."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 7 — Scooby Companion + Win/Loss Sequences (Full GSAP Choreography)
+  # Player gets the full emotional arc: Scooby reactions + ordered event chains.
+  # ---------------------------------------------------------------------------
+  - id: 7
+    name: "Juice I — Scooby Companion, Win/Loss Sequences (Full GSAP Choreography)"
+    priority: P1
+    player_visible: "Scooby idles at bottom-left corner; contextual speech bubbles appear for key events; win sequence: 8-step ordered chain (card scale → dim → flip → name banner → Scooby jump → star count → fade); loss sequence: scene desaturate + Scooby droop + overlay"
+    features:
+      - scooby-companion
+      - win-loss-sequences
+    cos_covered:
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [out-of-reach, center]
+      touch_targets: []
+      feedback_surfaces: [scene-canvas-bottom-left, speech-bubble-overlay, results-overlay, hud-overlay]
+    acceptance:
+      # scooby-companion
+      - given: "game scene loads"
+        should: "Scooby idle animation plays at bottom-left (GPU sprite, not DOM); idle loop runs continuously"
+      - given: "player taps a locked hotspot"
+        should: "Scooby plays 'Ruh-roh' speech bubble (2s auto-dismiss) and 'ruh-roh' VO cue fires"
+      - given: "player taps red-herring hotspot"
+        should: "Scooby plays shrug pose frame and 'wah-wah' VO cue"
+      # win-loss-sequences
+      - given: "correct accusation made (Win phase)"
+        should: "8-step ordered sequence fires: (1) villain card scale-up, (2) scene dim, (3) unmasking rotationY flip 600ms, (4) villain name banner slide-in, (5) Scooby jump + 'Scooby-Dooby-Doo!' VO, (6) star fill sequential 200ms per star, (7) results fade in, (8) Next Case button appears"
+      - given: "tap counter hits 0 (Loss phase)"
+        should: "7-step ordered sequence fires: (1) freeze hotspot input, (2) scene desaturate 350ms, (3) Scooby droop ears, (4) loss overlay fade-in, (5) text type-in 400ms, (6) Try Again button appears, (7) Keep Going button appears"
+      - given: "any sequence is playing"
+        should: "player input is fully blocked until sequence completes (gamePhase = Animating)"
+    test_loci:
+      - describe: "ScoobyRenderer: idle and reactions"
+        file: "tests/clue-chasers/scooby-renderer.test.ts"
+        cases:
+          - "Scooby sprite is GPU Container (not DOM)"
+          - "idle animation loop runs on init"
+          - "locked-hotspot tap triggers Ruh-roh reaction"
+          - "red-herring tap triggers shrug reaction"
+      - describe: "WinLossSequences: ordered event chains"
+        file: "tests/clue-chasers/win-loss-sequences.test.ts"
+        cases:
+          - "win sequence: 8 events emitted in correct order"
+          - "loss sequence: 7 events emitted in correct order"
+          - "input blocked during Animating phase"
+          - "sequence completes before input re-enabled"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+        - src/game/clue-chasers/data/scooby-dialogue.ts
+      integration:
+        - src/game/clue-chasers/renderers/ScoobyRenderer.ts
+        - src/game/clue-chasers/GameController.ts
+        - src/game/clue-chasers/renderers/SceneRenderer.ts
+      test:
+        - tests/clue-chasers/scooby-renderer.test.ts
+        - tests/clue-chasers/win-loss-sequences.test.ts
+    how:
+      - "ScoobyRenderer: GPU Container at bottom-left (fixed position relative to stage). Emoji text fallback '🐕' until atlas loads. Idle: GSAP yoyo scale oscillation (1.0→1.02, 2s). Reaction states: shrug (scaleX flip), droop (translateY +10px). Speech bubble: SolidJS signal-driven DOM overlay (useCompanionDialogue hook). Destroy: gsap.killTweensOf(scoobySprite) before removeChild."
+      - "Win sequence in GameController: GSAP Timeline with 8 labeled steps. Each step fires after previous completes (timeline.add). Animating phase blocked by gamePhase check at input handler. UnmaskingFlip: gsap.to(villainCard, {pixi:{rotationY:180}, duration:0.6})."
+      - "Loss sequence: separate GSAP timeline. Scene desaturate via GSAP pixi tint to grayscale. Scooby droop via y-offset tween. Loss overlay via SolidJS signal flip (gameState.gameOutcome = 'loss')."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 5 rows covered)"
+      - "integration call site exists at GameController.ts and ScoobyRenderer.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for animated-dynamics"
+      - "no requestAnimationFrame in sequences (guardrail #3); GSAP-only"
+      - "Scooby sprite is GPU Container (guardrail #1); speech bubble is DOM via signal only"
+      - "tweens killed before ScoobyRenderer.destroy() (guardrail #2)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Ordered event chain (8 steps) must fire in sequence. GSAP timeline with many steps is easy to miswire. Input blocking must be airtight during sequence."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 8 — VFX Particles + Audio Config
+  # Player gets full multi-channel feedback on every action.
+  # ---------------------------------------------------------------------------
+  - id: 8
+    name: "Juice II — VFX Particles, Audio SFX/VO Config"
+    priority: P1
+    player_visible: "red-herring tap shows 8-particle puff; evidence tap shows dust-disturb particles; win triggers 50-particle confetti burst; all game events have audio feedback (VO lines, SFX stings)"
+    features:
+      - vfx-particles
+      - audio-system
+    cos_covered:
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [center, out-of-reach]
+      touch_targets: []
+      feedback_surfaces: [scene-canvas]
+    acceptance:
+      # vfx-particles
+      - given: "player taps red-herring hotspot"
+        should: "8-particle puff plays (180ms linear alpha fade); particles are pre-allocated from pool (not created per-tap)"
+      - given: "player taps empty hotspot"
+        should: "4-6 dust-disturb particles play (120ms); no tap consumed"
+      - given: "win sequence step 5 (confetti)"
+        should: "50-particle confetti burst plays from center-top (1s); concurrent particle count <= 80 (guardrail #13)"
+      # audio-system
+      - given: "player makes their first tap (any tap)"
+        should: "unlockAudio() is called before any sound plays (mobile audio unlock per mobile-constraints.mdc)"
+      - given: "audio sprite JSON is configured"
+        should: "all audio sprite entries use 'urls' key (not 'src') per asset-bundles.mdc critical guardrail"
+      - given: "evidence tap occurs"
+        should: "whoosh SFX fires (0.15-0.2s)"
+      - given: "red-herring tap occurs"
+        should: "'wah-wah' SFX sting fires (0.25-0.3s)"
+      - given: "Clue Board fills"
+        should: "investigation-complete chime fires (0.6s)"
+    test_loci:
+      - describe: "ParticleRenderer: pool management and caps"
+        file: "tests/clue-chasers/particle-renderer.test.ts"
+        cases:
+          - "particles pre-allocated in pool (not created per-tap)"
+          - "red-herring puff: exactly 8 particles, 180ms duration"
+          - "confetti burst: 50 particles, <= 80 concurrent"
+          - "no Pixi filters used (tint+alpha only)"
+      - describe: "AudioConfig: sprite key validation"
+        file: "tests/clue-chasers/audio-config.test.ts"
+        cases:
+          - "all audio sprite entries use 'urls' key (not 'src')"
+          - "unlockAudio called before first sound"
+    files:
+      state:
+        - src/game/clue-chasers/audio/audio-config.ts
+        - src/game/clue-chasers/asset-manifest.ts
+      integration:
+        - src/game/clue-chasers/renderers/ParticleRenderer.ts
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/particle-renderer.test.ts
+        - tests/clue-chasers/audio-config.test.ts
+    how:
+      - "ParticleRenderer: pre-allocate pool of 80 Text/Sprite objects (emoji fallback '✨'/'💨'/'🎊'). Acquire from pool on event, release on alpha=0 complete. No new objects in tick() (guardrail #6). Confetti: 50 particles from pool, stagger spawn with GSAP delayedCall, spread from stage center-top. No Pixi filters — tint+alpha only (guardrail #13)."
+      - "audio-config.ts: audio sprite definition map for all SFX and VO lines. Keys: whoosh, wah-wah, ruh-roh, hmm-nope, scooby-dooby-doo, investigation-chime, win-fanfare, sad-trombone. Each entry: {urls: ['audio/sfx.mp3'], sprite: {id: [start, length]}}. 'urls' key (NOT 'src') per critical guardrail."
+      - "Wire unlockAudio() call in GameController on first pointertap event from stage (mobile unlock per mobile-constraints.mdc)."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 8 rows covered)"
+      - "integration call site exists at GameController.ts and ParticleRenderer.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for animated-dynamics"
+      - "all audio sprite entries use 'urls' key (verified by test)"
+      - "particle pool pre-allocated; no new objects in tick() (guardrail #6)"
+      - "no Pixi filters in ParticleRenderer (guardrail #13)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: LOW
+    risk_reason: "Additive layer. Audio config is data-only. Particle pool is encapsulated. Main risk is the 'urls' key guardrail — covered by acceptance test."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 9 — Title Screen (branded) + Loading Screen (Scooby-branded)
+  # Player sees Scooby-Doo: Clue Chasers identity on launch and title.
+  # ---------------------------------------------------------------------------
+  - id: 9
+    name: "Screen Identity — Scooby-Branded Title Screen and Loading Screen"
+    priority: P1
+    player_visible: "loading screen shows Scooby paw-print progress bar and Mystery Inc. logo on dark background; title screen shows 'Investigate!' button and Mystery Machine scene"
+    features:
+      - loading-screen
+      - title-screen
+    cos_covered:
+      - core-interaction
+      - canvas
+    ux_zones:
+      thumb_zone: [center, out-of-reach]
+      touch_targets: [investigate-button, settings-icon]
+      feedback_surfaces: [fullscreen-progress-bar, animated-scene, button-cta]
+    acceptance:
+      # loading-screen
+      - given: "app launches"
+        should: "LoadingScreen shows dark background, paw-print progress emoji fallback ('🐾') + 'Mystery Inc.' title text (not generic 'Loading'); progress bar fills to 100% then crossfades to title (400ms)"
+      # title-screen
+      - given: "loading completes and title screen mounts"
+        should: "StartScreen shows 'Scooby-Doo: Clue Chasers' heading, 'Investigate!' primary button at bottom-center (Natural zone, >= 44pt), settings icon top-right (Stretching zone)"
+      - given: "player taps Investigate! button"
+        should: "routes to Tutorial Level 1 (first-time) or Chapter Select (returning player); no 'Start Game' or 'Play' text"
+      - given: "title screen renders"
+        should: "no placeholder or scaffold-copy text visible; no 'Game Over', no 'Score', no generic labels"
+      # CoS core-interaction: buttons are discoverable
+      - given: "title screen loads for the first time"
+        should: "Investigate! button is visually prominent (large, center-bottom); player can understand action within 3 seconds without explanation"
+    test_loci:
+      - describe: "LoadingScreen: branded content"
+        file: "tests/clue-chasers/loading-screen.test.ts"
+        cases:
+          - "shows paw-print fallback and Mystery Inc. text (not generic 'Loading')"
+          - "progress bar crossfades on complete (400ms)"
+          - "screen consumes reserved_bottom_px=56 as padding"
+      - describe: "StartScreen: branded title and routing"
+        file: "tests/clue-chasers/start-screen.test.ts"
+        cases:
+          - "shows Scooby-Doo: Clue Chasers heading"
+          - "Investigate! button at bottom-center >= 44pt"
+          - "Investigate! routes to tutorial on first launch"
+          - "no scaffold placeholder text"
+    files:
+      state: []
+      integration:
+        - src/game/screens/LoadingScreen.tsx
+        - src/game/screens/StartScreen.tsx
+        - src/game/clue-chasers/screens/startView.ts
+      test:
+        - tests/clue-chasers/loading-screen.test.ts
+        - tests/clue-chasers/start-screen.test.ts
+    how:
+      - "Replace LoadingScreen.tsx generic content with Scooby-branded version: dark bg (#1a1a1a), paw-print progress bar (emoji '🐾' repeated, width-animated via GSAP or CSS width transition), 'Mystery Inc.' logo text. Auto-dismiss at 100% with 400ms crossfade."
+      - "Replace StartScreen.tsx / startView.ts content: 'Scooby-Doo: Clue Chasers' h1, 'Investigate!' button at bottom (safe area aware: padding-bottom = max(safe-area-inset-bottom, 56px)), settings icon top-right. First-launch vs returning-player routing via localStorage flag (seenTutorial)."
+      - "startView.ts: GPU canvas shows Mystery Machine animated scene (emoji text fallback '🚐💨' on dark scene background until atlas loads)."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 5 rows covered)"
+      - "integration call site exists at LoadingScreen.tsx and StartScreen.tsx"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, canvas"
+      - "no 'Game Over', no 'Score', no 'Start Game' placeholder text in either screen"
+      - "Investigate! button >= 44pt, center-bottom; settings icon top-right"
+      - "screens consume reserved_bottom_px=56; safe-area-inset respected"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: LOW
+    risk_reason: "Content-gap replacement of existing screens. No new navigation logic. Main risk is scaffold text slipping through (guardrail #15 — acceptance test explicitly checks)."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 10 — Chapter Start Interstitial + Chapter Complete + Chapter Progression
+  # Player can progress through Chapter 1 cases with context and story.
+  # ---------------------------------------------------------------------------
+  - id: 10
+    name: "Progression — Chapter Start/Complete Interstitials, Chapter Select, Chapter Progression"
+    priority: P1
+    player_visible: "between tutorial and Chapter 1: Mystery Machine drive-across animation + Chapter 1 title card; before each case: chapter splash art with 'Investigate!' button; after Chapter 1 completes: 3-panel comic + Chapter Select screen"
+    features:
+      - chapter-start-interstitial
+      - chapter-complete-story-reveal
+      - chapter-progression
+    cos_covered:
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: [investigate-button, continue-button, panel-tap-through, chapter-select-cards, case-navigation]
+      feedback_surfaces: [splash-art, chapter-title-card, fullscreen-comic-panels, chapter-select-screen, progress-bar, level-counter]
+    acceptance:
+      # chapter-start-interstitial
+      - given: "tutorial completes and Chapter 1 starts"
+        should: "Mystery Machine drive-across animation plays (1200ms GSAP translate) + Chapter 1 title card fades in; 'Investigate!' button appears below title"
+      - given: "Chapter 1 Case N start interstitial shows"
+        should: "case counter 'Case N of 5' is visible; splash art and chapter title present; progress bar visible (hidden during tutorial)"
+      # chapter-complete-story-reveal
+      - given: "all 5 Chapter 1 cases complete"
+        should: "3-panel comic sequence fires: (1) all 5 villains lineup, (2) gang celebrates, (3) chapter card with total stars; 'Continue' button navigates to Chapter Select"
+      - given: "chapter complete comic is showing"
+        should: "panels advance on tap (tap-through); auto-advances if player does not tap within 8s"
+      # chapter-progression
+      - given: "Chapter Select screen loads"
+        should: "Chapter 1 shows completed state with total stars; Chapter 2 shows 'Coming Soon' locked state; Chapter 3 shows 'Coming Soon' locked state"
+      - given: "player taps Chapter 1 on Chapter Select"
+        should: "case navigation shows all 5 cases with per-case star rating"
+    test_loci:
+      - describe: "ChapterInterstitial: transition and content"
+        file: "tests/clue-chasers/chapter-interstitial.test.ts"
+        cases:
+          - "Mystery Machine drive-across: 1200ms GSAP tween"
+          - "case counter 'Case N of 5' visible"
+          - "progress bar visible during chapter play, hidden during tutorial"
+      - describe: "ChapterCompleteScreen: comic and navigation"
+        file: "tests/clue-chasers/chapter-complete.test.ts"
+        cases:
+          - "3 panels render in sequence"
+          - "tap-through advances panels"
+          - "auto-advance after 8s"
+          - "Continue button navigates to Chapter Select"
+      - describe: "ChapterProgression: data and unlock state"
+        file: "tests/clue-chasers/chapter-progression.test.ts"
+        cases:
+          - "chapters.ts has 3 chapters, 5 cases each"
+          - "Chapter 1 unlocked, Chapters 2-3 locked at launch"
+          - "case-level star ratings persisted per chapter"
+    files:
+      state:
+        - src/game/clue-chasers/data/chapters.ts
+        - src/game/state.ts
+      integration:
+        - src/game/clue-chasers/screens/ChapterInterstitial.ts
+        - src/game/clue-chasers/screens/ChapterCompleteScreen.ts
+        - src/game/clue-chasers/screens/ChapterSelectScreen.ts
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/chapter-interstitial.test.ts
+        - tests/clue-chasers/chapter-complete.test.ts
+        - tests/clue-chasers/chapter-progression.test.ts
+    how:
+      - "ChapterInterstitial.ts: GPU canvas overlay (Pixi Container in uiLayer). Mystery Machine emoji '🚐' sprite translates from stage.right to stage.center over 1200ms GSAP. Chapter title card: TextStyle with Scooby-branded font. 'Investigate!' button wired to goto('game') + load next case."
+      - "ChapterCompleteScreen.ts: 3 GPU containers (panels) loaded sequentially on tap. Panel 1: villain emoji lineup. Panel 2: gang celebration emojis. Panel 3: total stars display. Auto-advance via GSAP delayedCall(8s). Continue button: goto('start') variant for Chapter Select."
+      - "ChapterSelectScreen.ts: DOM screen (SolidJS) under 'results' screen ID variant OR separate route. 3 chapter cards; locked chapters show '🔒 Coming Soon'. Uses chapters.ts data + persisted progress from ECS/localStorage. Progress bar + level counter: visible signals bridged from ECS."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 6 rows covered)"
+      - "integration call sites exist at ChapterInterstitial.ts, ChapterCompleteScreen.ts, ChapterSelectScreen.ts, GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for animated-dynamics"
+      - "chapters.ts has 3 chapters, 15 total case slots; Chapter 1 has full data; Chapters 2-3 locked"
+      - "progress bar and level counter visible during chapter play, hidden during tutorial"
+      - "screen IDs remain loading|start|game|results (no new top-level screen IDs added)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Adds multiple new screens/overlays. Must preserve valid screen IDs constraint (no new top-level IDs). Chapter Select routing requires correct navigation graph."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 11 — Scene Pan (Wide Scene)
+  # Player can pan wide scenes on chapter-end cases.
+  # ---------------------------------------------------------------------------
+  - id: 11
+    name: "Wide Scene Pan — Horizontal Momentum-Damped Swipe"
+    priority: P2
+    player_visible: "on chapter-end wide-scene cases, player can swipe horizontally to pan the scene; panning has momentum damping and snaps to bounds; panning does not consume a tap"
+    features:
+      - scene-pan
+    cos_covered:
+      - core-interaction
+    ux_zones:
+      thumb_zone: [center]
+      touch_targets: [full-scene-swipe-area]
+      feedback_surfaces: [scene-canvas]
+    acceptance:
+      # scene-pan
+      - given: "player swipes horizontally on a wide-scene case"
+        should: "scene pans smoothly with momentum damping; GSAP spring-like deceleration after finger lift; scene does not scroll vertically"
+      - given: "scene reaches horizontal bounds"
+        should: "pan snaps to bounds (rubber-band then snap); cannot swipe past scene edge"
+      - given: "player quickly taps a hotspot on a wide scene without swiping"
+        should: "tap registers on hotspot normally; pan gesture does NOT activate (threshold-gated: < 12px = tap)"
+      - given: "scene is panning"
+        should: "tap on hotspot is ignored during active pan momentum; input not consumed"
+    test_loci:
+      - describe: "ScenePan: gesture discrimination and bounds"
+        file: "tests/clue-chasers/scene-pan.test.ts"
+        cases:
+          - "horizontal drag > 12px triggers pan (not tap)"
+          - "vertical drag does not trigger pan"
+          - "momentum deceleration: velocity decays on pointer-up"
+          - "bounds snap: pan cannot go past scene edges"
+          - "active pan: hotspot tap not registered during momentum"
+    files:
+      state:
+        - src/game/clue-chasers/state/ClueChasersPlugin.ts
+      integration:
+        - src/game/clue-chasers/renderers/SceneRenderer.ts
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/scene-pan.test.ts
+    how:
+      - "SceneRenderer: pointermove delta tracking. Pan activates when horizontalDelta > 12px and no tap threshold hit. GSAP momentum: on pointerup, gsap.to(sceneContainer, {x: targetX, ease:'power2.out', duration:0.4}) with velocity carry-over. Bounds: clamp x to [-(sceneWidth - viewportWidth), 0]."
+      - "Tap discrimination: record pointerdown position; if pointerup.x delta < 12px → tap event; if > 12px → pan consumed gesture. Pan and hotspot tap are mutually exclusive gesture branches."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 4 rows covered)"
+      - "integration call site exists at SceneRenderer.ts and GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction"
+      - "pan gesture discrimination: < 12px = tap, >= 12px = pan"
+      - "no requestAnimationFrame for pan momentum (guardrail #3)"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Gesture discrimination between tap and pan on the same container is subtle. Wrong threshold or event model causes hotspots to misfire on pan."
+
+  # ---------------------------------------------------------------------------
+  # BATCH 12 — First-Time Intro Cutscene
+  # Player gets the 4-panel comic origin story on very first launch.
+  # ---------------------------------------------------------------------------
+  - id: 12
+    name: "Story — First-Time Intro Cutscene (4-panel comic)"
+    priority: P2
+    player_visible: "on very first launch only, 4-panel animated comic plays automatically: Scooby sniffs → evidence flies → suspect cards → unmasking; tap-to-skip bottom-right; auto-advances at 500ms per panel"
+    features:
+      - first-time-intro-cutscene
+    cos_covered:
+      - animated-dynamics
+    ux_zones:
+      thumb_zone: [out-of-reach]
+      touch_targets: [tap-to-skip-button]
+      feedback_surfaces: [fullscreen-panel-sequence]
+    acceptance:
+      # first-time-intro-cutscene
+      - given: "player launches game for the very first time (no seenIntro flag)"
+        should: "4-panel cutscene auto-plays before Tutorial Level 1; panels crossfade at 500ms intervals; 'tap to skip' affordance visible bottom-right (>= 44pt)"
+      - given: "player has already seen the intro (seenIntro=true in localStorage)"
+        should: "cutscene is skipped; player routes directly to title screen / tutorial"
+      - given: "player taps tap-to-skip during cutscene"
+        should: "cutscene immediately exits; routes to Tutorial Level 1; seenIntro persisted"
+      - given: "all 4 panels advance to end"
+        should: "routes automatically to Tutorial Level 1; seenIntro persisted"
+    test_loci:
+      - describe: "IntroCutscene: one-time gate and panel sequence"
+        file: "tests/clue-chasers/intro-cutscene.test.ts"
+        cases:
+          - "first launch: cutscene plays (no seenIntro flag)"
+          - "subsequent launch: cutscene skipped (seenIntro=true)"
+          - "tap-to-skip exits immediately and persists seenIntro"
+          - "all 4 panels auto-advance at 500ms"
+          - "tap-to-skip button >= 44pt touch target"
+    files:
+      state:
+        - src/game/clue-chasers/data/cutscene-panels.ts
+      integration:
+        - src/game/clue-chasers/screens/IntroCutscene.ts
+        - src/game/clue-chasers/GameController.ts
+      test:
+        - tests/clue-chasers/intro-cutscene.test.ts
+    how:
+      - "IntroCutscene.ts: GPU Container (Pixi, fullscreen). 4 panel containers with emoji/text fallback: Panel 1 '🐕💨' (Scooby sniffs), Panel 2 '🔍✨' (evidence flies), Panel 3 '🃏🃏🃏' (suspect cards), Panel 4 '🎭😱' (unmasking). GSAP delayedCall(0.5) auto-advance. Tap-to-skip: static button Container bottom-right with pointer event."
+      - "seenIntro flag: localStorage.setItem('cc_seenIntro', '1'). Read in GameController before showing cutscene. GSAP delayedCall drives sequencing (no setTimeout per guardrail #3)."
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 5 rows covered)"
+      - "integration call site exists at IntroCutscene.ts and GameController.ts"
+      - "every file in files.integration exercised by at least one acceptance test"
+      - "CoS sub-walk clean for animated-dynamics"
+      - "tap-to-skip >= 44pt touch target (bottom-right)"
+      - "no setTimeout or setInterval (guardrail #3); GSAP delayedCall only"
+      - "seenIntro persisted to localStorage"
+      - "bun run build + bun run test pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Adds new session node inside TITLE lifecycle. Navigation graph touches first-launch path. One-shot flag must not reset on reload."
+
+# ============================================================================
+# WARNINGS (collision resolution + self-audit)
+# ============================================================================
+
+warnings:
+  # Collision resolution (all 5 collisions from gdd-analysis.yml.warnings[])
+  - "collision-resolved:screen-id-results-language — skill-wins (scaffold-state § valid screen IDs: loading|start|game|results); gdd-ask='Level Complete Screen'+'Loss Screen' as new top-level IDs dropped; plan maps Level Complete → results/win variant and Loss → results/loss variant within existing results screen ID"
+  - "collision-resolved:results-screen-content — skill-wins (guardrail #15: no stubs/scaffold copy in shipped code); gdd-ask=villain-unmasking+star-rating implemented; scaffold 'Game Over' text + generic score replaced in batch 2+3"
+  - "collision-resolved:results-screen-language — skill-wins (guardrail #15: no scaffold copy); gdd-ask='The mystery got away… for now!' wins over scaffold 'Game Over' heading; scaffold text replaced in batch 3 (loss screen)"
+  - "collision-resolved:gameController-mode — skill-wins (guardrail #1: no DOM in GPU game code; ecs-state.mdc § single-source-of-truth); gdd-ask=pixi-gpu-canvas-game wins; DOM mode stub replaced with Pixi mode in batch 1 (this is the GDD value, consistent with skill)"
+  - "collision-resolved:audio-sprite-key — skill-wins (asset-bundles.mdc: audio sprite JSON must use 'urls' key — critical); any assumed 'src' key convention from GDD dropped; all audio sprite JSON in audio-config.ts must use 'urls' key (enforced by acceptance test in batch 8)"
+  # Self-audit findings
+  - "self-audit:src/core-read-only — PASS: no batches[].files.* entry lands under src/core/"
+  - "self-audit:no-stubs-placeholders — PASS: resolved_questions_scalars contains no 'placeholder', 'TBD', 'stub', 'mock data', or '~N' values"
+  - "self-audit:slug-substitution — PASS: no files.* entry contains '<game-root>' or 'mygame'; all game-specific paths use 'src/game/clue-chasers/'"
+  - "self-audit:collision-resolution — PASS: all 5 collision:* warnings from gdd-analysis.yml have matching collision-resolved:* entries"
+  - "self-audit:integration-file-coverage — PASS: every file in batches[].files.integration referenced by at least one acceptance[].should row"
+
+completeness_gaps: []

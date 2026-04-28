@@ -8,6 +8,8 @@ import { createSignal, createRoot } from 'solid-js';
  * Pause state lives in core/systems/pause (scaffold feature).
  */
 
+export type GameOutcome = 'win' | 'loss' | null;
+
 export interface GameState {
   score: () => number;
   setScore: (score: number) => void;
@@ -17,12 +19,26 @@ export interface GameState {
   setLevel: (level: number) => void;
   incrementLevel: () => void;
 
+  // Clue Chasers extended state
+  starsEarned: () => number;
+  setStarsEarned: (stars: number) => void;
+  gameOutcome: () => GameOutcome;
+  setGameOutcome: (outcome: GameOutcome) => void;
+  villainName: () => string;
+  setVillainName: (name: string) => void;
+  coinBalance: () => number;
+  setCoinBalance: (balance: number) => void;
+
   reset: () => void;
 }
 
 function createGameState(): GameState {
   const [score, setScore] = createSignal(0);
   const [level, setLevel] = createSignal(1);
+  const [starsEarned, setStarsEarned] = createSignal(0);
+  const [gameOutcome, setGameOutcome] = createSignal<GameOutcome>(null);
+  const [villainName, setVillainName] = createSignal('');
+  const [coinBalance, setCoinBalance] = createSignal(0);
 
   return {
     score,
@@ -33,9 +49,21 @@ function createGameState(): GameState {
     setLevel,
     incrementLevel: () => setLevel((l) => l + 1),
 
+    starsEarned,
+    setStarsEarned,
+    gameOutcome,
+    setGameOutcome,
+    villainName,
+    setVillainName,
+    coinBalance,
+    setCoinBalance,
+
     reset: () => {
       setScore(0);
       setLevel(1);
+      setStarsEarned(0);
+      setGameOutcome(null);
+      setVillainName('');
     },
   };
 }
