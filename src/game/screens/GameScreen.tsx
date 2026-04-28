@@ -10,8 +10,8 @@ import type { GameTuning } from '~/game/tuning';
 import { useGameData } from '~/game/screens/useGameData';
 import { gameState } from '~/game/state';
 
-// Game-specific controller — swap this import for a different game
-import { setupGame } from '~/game/mygame/screens/gameController';
+// Scooby-Doo: Clue Chasers game controller
+import { setupGame } from '~/game/clue-chasers/GameController';
 
 export default function GameScreen() {
   const { coordinator } = useAssets();

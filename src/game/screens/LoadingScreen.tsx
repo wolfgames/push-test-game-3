@@ -1,11 +1,10 @@
 import { onMount, createMemo, Show } from 'solid-js';
-import { Spinner } from '@wolfgames/components/solid';
 import { useScreen } from '~/core/systems/screens';
 import { useAssets, useLoadingState } from '~/core/systems/assets';
 import { useManifest } from '@wolfgames/components/solid';
 import { useTuning, type ScaffoldTuning } from '~/core';
-import { Logo } from '~/core/ui/Logo';
 import type { GameTuning } from '~/game/tuning';
+import { LOADING_SCREEN_CONFIG } from '~/game/clue-chasers/screens/loadingScreenConfig';
 
 export function LoadingScreen() {
   const { goto } = useScreen();
@@ -93,39 +92,45 @@ export function LoadingScreen() {
     }
   });
 
+  const cfg = LOADING_SCREEN_CONFIG;
+
   return (
-    <div class="fixed inset-0 flex flex-col items-center justify-center bg-[#BCE083]">
+    <div
+      class="fixed inset-0 flex flex-col items-center justify-center"
+      style={{ 'background-color': cfg.backgroundColor, 'padding-bottom': `${cfg.reservedBottomPx}px` }}
+    >
       <Show
         when={failedBundles().length === 0}
         fallback={
           <div class="text-center max-w-sm px-6">
-            <p class="text-lg font-semibold text-gray-800 mb-2">Unable to load</p>
-            <p class="text-sm text-gray-600 mb-4">
+            <p class="text-lg font-semibold text-amber-400 mb-2">Unable to load</p>
+            <p class="text-sm text-gray-400 mb-4">
               Failed to load: {failedBundles().join(', ')}
             </p>
             <button
               onClick={retryFailed}
-              class="px-6 py-3 bg-white text-gray-800 rounded-xl font-medium shadow-md hover:shadow-lg active:scale-95 transition-all"
+              class="px-6 py-3 bg-amber-400 text-gray-900 rounded-xl font-medium shadow-md hover:shadow-lg active:scale-95 transition-all"
             >
               Retry
             </button>
           </div>
         }
       >
-        <Spinner size="lg" class="w-24 h-24 text-gray-800" />
-        <div class="mt-8 w-64 h-2 bg-white/30 rounded-full overflow-hidden">
+        <div class="text-6xl mb-4">{cfg.progressEmoji}</div>
+        <h1 class="text-2xl font-bold text-amber-400 mb-8">{cfg.titleText}</h1>
+        <div class="w-64 h-3 bg-white/20 rounded-full overflow-hidden">
           <div
-            class="h-full bg-gray-800 rounded-full transition-all duration-300"
-            style={{ width: `${progress()}%` }}
+            class="h-full bg-amber-400 rounded-full"
+            style={{
+              width: `${progress()}%`,
+              transition: `width ${cfg.crossfadeDurationMs}ms ease-out`,
+            }}
           />
         </div>
+        <p class="mt-4 text-white/60 text-sm">
+          {progress() < 100 ? 'Investigating…' : 'Ready!'}
+        </p>
       </Show>
-
-      {themeLoaded() && (
-        <div class="absolute bottom-8">
-          <Logo />
-        </div>
-      )}
     </div>
   );
 }

@@ -1,0 +1,220 @@
+# phase-summary.yml — per-phase handoff for run-01 (pass: core)
+
+pass_gate:
+  status: complete
+  pass: core
+  previous_pass_stable: true
+  previous_run_ref: null
+  skip_reason: ""
+  carry_forward: {}
+
+prime:
+  status: complete
+  project: "Scooby-Doo: Clue Chasers"
+  stack: "pixi + solidjs + gsap + bun (vite, vitest)"
+  existing_features: 0
+  dom_overlays:
+    - WolfGamesLogo (bottom, ~56px total reserved)
+  carry_forward:
+    target_device: "iPhone reference portrait 390x844 (dvh)"
+    game_greenfield: true
+    reserved_bottom_px: 56
+    reserved_top_px: 0
+    game_controller_stub: true
+    stack_gaps: []
+    host_rules_missing: false
+
+analyze:
+  status: complete
+  features:
+    exists: 0
+    partial: 0
+    new: 22
+    conflict: 0
+    content_gap: 5
+  conflict_breakdown:
+    reuse: 0
+    adapt: 0
+    replace: 0
+  high_risk: [gameplay-screen, hotspot-system, ecs-game-state, scene-generation-algorithm]
+  medium_risk: [first-time-intro-cutscene, chapter-start-interstitial, deduction-phase, chapter-complete-story-reveal, evidence-token, clue-board, tap-counter, suspect-cards, scene-pan, scooby-companion, vfx-particles, win-loss-sequences, tutorial-system, chapter-progression, level-complete-screen, loss-screen]
+  open_questions: 5
+  carry_forward:
+    critical_integration_point: gameplay-screen
+    transformative_hint: false
+
+plan:
+  status: complete
+  gdd_type: "additive"
+  batches: 12
+  features: 22
+  new_files: 41
+  modified_files: 6
+  viewport_budget:
+    default_scene_px: 688
+    dom_reserved_bottom_px: 56
+    clue_board_hud_bottom_px: 100
+    viewport_total_px: 844
+  resolved_questions: 5
+  out_of_pass_cos: []
+  warnings:
+    - "collision-resolved:screen-id-results-language — skill-wins (scaffold-state valid screen IDs); Level Complete and Loss mapped to results variants"
+    - "collision-resolved:results-screen-content — skill-wins (guardrail #15); scaffold 'Game Over' text replaced in batch 2+3"
+    - "collision-resolved:results-screen-language — skill-wins (guardrail #15); 'Game Over' heading replaced with GDD language"
+    - "collision-resolved:gameController-mode — skill-wins (guardrail #1 + ecs-state); DOM stub replaced with Pixi mode in batch 1"
+    - "collision-resolved:audio-sprite-key — skill-wins (asset-bundles.mdc critical); 'urls' key enforced in batch 8 acceptance test"
+    - "self-audit:src/core-read-only — PASS"
+    - "self-audit:no-stubs-placeholders — PASS"
+    - "self-audit:slug-substitution — PASS"
+    - "self-audit:collision-resolution — PASS"
+    - "self-audit:integration-file-coverage — PASS"
+  resolved_questions_scalars:
+    q-game-name: "clue-chasers"
+    q-scoring-formula: "caseScore = 1000 * (tapsRemaining/startingTaps + 1.0), clamped [1000, 2000]; stars: 3=>=1500, 2=>=1200, 1=>=1000"
+    q-continue-coin-system: "pre-wired integer coinBalance; 5 coins per continue; 10 coins earned per chapter; no ad integration in core pass"
+    q-chapter-asset-scope: "Tutorial + Chapter 1 only (7 scenes); Chapters 2-3 post-launch"
+    q-star-thresholds: "derived from scoring formula; Easy(15): 3 stars>=7 remaining, 2 stars>=3 remaining, 1 star>=1"
+  carry_forward:
+    game_slug: "clue-chasers"
+    hook_batch: 1
+    priority_ordering_applied: true
+    viewport_budget_derived_from: "measured_from_scaffold"
+    critical_integration_point: "gameplay-screen"
+    cos_deferred_to_batch:
+      core-interaction: 1
+      canvas: 1
+      animated-dynamics: 1
+      scoring: 1
+
+implement:
+  status: complete
+  batches_completed: "12/12"
+  files_modified: 5
+  files_created: 42
+  tests_added: 99
+  features_audited: 22
+  issues_found: 6
+  fixes_applied: 6
+  deferred: []
+  blockers: []
+  ux_gaps: []
+  cos_gaps: []
+  cos_findings:
+    - "core-interaction: PASS — hotspots 44pt+, suspect cards 44pt+, Investigate! button 56pt, skip button 60pt"
+    - "canvas: PASS — scene canvas 688px available (844 - 56 DOM - 100 HUD), no GPU/DOM bleed"
+    - "animated-dynamics: PASS — all animations GSAP-only, no rAF/setInterval, tweens killed on destroy"
+    - "scoring: PASS — caseScore = 1000*(tapsRemaining/startingTaps+1.0) clamped [1000,2000]; stars derived correctly"
+  issues_resolved:
+    - "Rectangle missing from pixi.js mock in suspect-cards.test.ts → added MockRectangle class to mock"
+    - "getSuspectCards returned empty name/emoji → stored suspectsData in DeductionRenderer, lookup on getSuspectCards call"
+    - "pre-existing @adobe/data IndexedDB unhandled rejection in test env → pre-existing library side effect, does not affect test results"
+    - "GSAP onComplete not firing in tests → mock updated to call setTimeout(vars.onComplete, 0)"
+    - "ECS resources are read-only → used transactions (setSelectedSuspect) instead of direct assignment"
+    - "Observe<T> is a function, not object with .subscribe() → fixed bridgeEcsToSignals to call db.observe.resources.X(notify) directly"
+  guardrails_verified:
+    - "#1 No DOM in GPU code: ALL renderers use Container/Text/Graphics only"
+    - "#2 Kill tweens before destroy: every renderer.destroy() kills activeTweens before container.destroy()"
+    - "#3 No rAF: all animation via GSAP (gsap.to, gsap.delayedCall)"
+    - "#4 eventMode='passive' on parent containers, 'static' on interactive children"
+    - "#6 No per-frame allocation: ParticleRenderer pre-allocates pool of 80"
+    - "#9 Pure ECS actions: no Math.random(); seeded PRNG (mulberry32) in levelGenerator.ts"
+    - "#13 No Pixi filters: ParticleRenderer uses tint+alpha only"
+    - "#15 No stubs: LoadingScreen shows 'Mystery Inc.', StartScreen shows 'Scooby-Doo: Clue Chasers'"
+    - "audio urls key: audio-config.ts uses 'urls' key exclusively (verified by acceptance test)"
+  test_breakdown:
+    batch_1_ecs_gamecontroller: 7
+    batch_2_scoring_results: 9
+    batch_3_loss_continue: 5
+    batch_4_tutorial: 7
+    batch_5_deduction: 9
+    batch_6_level_generator: 8
+    batch_7_scooby_sequences: 8
+    batch_8_particles_audio: 6
+    batch_9_screens: 7
+    batch_10_chapter_progression: 10
+    batch_11_scene_pan: 5
+    batch_12_intro_cutscene: 5
+    extra_from_batches_1_3_additional: 13
+    total: 99
+  key_new_files:
+    - src/game/clue-chasers/state/ClueChasersPlugin.ts
+    - src/game/clue-chasers/state/game-logic.ts
+    - src/game/clue-chasers/state/bridgeEcsToSignals.ts
+    - src/game/clue-chasers/state/levelGenerator.ts
+    - src/game/clue-chasers/state/sequenceBuilder.ts
+    - src/game/clue-chasers/state/ScenePanController.ts
+    - src/game/clue-chasers/renderers/HotspotRenderer.ts
+    - src/game/clue-chasers/renderers/EvidenceTokenRenderer.ts
+    - src/game/clue-chasers/renderers/ClueBoardRenderer.ts
+    - src/game/clue-chasers/renderers/HudRenderer.ts
+    - src/game/clue-chasers/renderers/SceneRenderer.ts
+    - src/game/clue-chasers/renderers/DeductionRenderer.ts
+    - src/game/clue-chasers/renderers/ScoobyRenderer.ts
+    - src/game/clue-chasers/renderers/ParticleRenderer.ts
+    - src/game/clue-chasers/data/hand-crafted-cases.ts
+    - src/game/clue-chasers/data/scooby-dialogue.ts
+    - src/game/clue-chasers/data/difficulty-tiers.ts
+    - src/game/clue-chasers/data/fallback-cases.ts
+    - src/game/clue-chasers/data/chapters.ts
+    - src/game/clue-chasers/audio/audio-config.ts
+    - src/game/clue-chasers/screens/startView.ts
+    - src/game/clue-chasers/screens/lossScreen.ts
+    - src/game/clue-chasers/screens/loadingScreenConfig.ts
+    - src/game/clue-chasers/screens/startScreenConfig.ts
+    - src/game/clue-chasers/screens/ChapterInterstitial.ts
+    - src/game/clue-chasers/screens/ChapterCompleteScreen.ts
+    - src/game/clue-chasers/screens/IntroCutscene.ts
+    - src/game/clue-chasers/asset-manifest.ts
+    - src/game/clue-chasers/GameController.ts
+    - src/game/clue-chasers/index.ts
+  key_modified_files:
+    - src/game/screens/GameScreen.tsx
+    - src/game/screens/StartScreen.tsx
+    - src/game/screens/ResultsScreen.tsx
+    - src/game/screens/LoadingScreen.tsx
+    - src/game/state.ts
+  carry_forward:
+    tests_passing: 99
+    build_clean: true
+    pre_existing_test_failures: 20  # unit/assets facade tests — pre-existing, unrelated to clue-chasers
+    pre_existing_indexeddb_error: true  # @adobe/data blob store in Node test env — library side effect
+
+integrate:
+  status: pending
+  viewport_rederived: false
+  orphans_wired: []
+  orphans_deleted: []
+  fallbacks_unified: []
+  unreachable: []
+  warnings: []
+  carry_forward: {}
+
+player_flow:
+  status: pending
+  journey_walked: false
+  transitions_checked: []
+  fun_test_result: ""
+  issues_found: 0
+  fixes_applied: 0
+  carry_forward: {}
+
+verify:
+  status: pending
+  build: ""
+  tests_passing: 0
+  tests_total: 0
+  fix_cycles: 0
+  playability: ""
+  remaining_issues: []
+  carry_forward: {}
+
+stabilize:
+  status: pending
+  completion_ratio: ""
+  test_count: 0
+  known_issues: []
+  cos_failed: []
+  cos_rationale: []
+  completeness_gaps: []
+  pipeline_status: ""
+  carry_forward: {}
